@@ -1,0 +1,11 @@
+[project]
+name = "chatbot"
+version = "0.1.0"
+requires-python = ">=3.14"
+dependencies = [
+    "gtts>=2.5.4",
+    "numpy>=2.5.0",
+    "sounddevice>=0.5.5",
+    "torch>=2.12.1",
+    "transformers>=5.12.1",
+]
