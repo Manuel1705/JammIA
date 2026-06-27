@@ -4,8 +4,10 @@ version = "0.1.0"
 requires-python = ">=3.14"
 dependencies = [
     "gtts>=2.5.4",
+    "mlx-lm>=0.21.0",
     "numpy>=2.5.0",
     "sounddevice>=0.5.5",
+    "sparqlwrapper>=2.0.0",
     "torch>=2.12.1",
     "transformers>=5.12.1",
 ]
