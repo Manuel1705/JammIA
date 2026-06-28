@@ -5,7 +5,8 @@ import torch
 from transformers import pipeline
 from mlx_lm import load, generate
 from gtts import gTTS
-from sparql_query import costruisci_contesto
+from query_manu import costruisci_contesto
+
 
 SR = 16000
 # Whisper su MPS (GPU Apple) se disponibile, altrimenti CPU
