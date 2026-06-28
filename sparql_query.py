@@ -7,9 +7,10 @@ import time
 import json
 import urllib.parse
 import urllib.request
+import os
 
 # Query sugli ARTISTI: vengono prelevati Nome, Data di Nascita, Luogo di Nascita,
-# movimento Artistico, numero di Opere create, numero di opere presenti a Napoli
+# movimento Artistico, Opere Note, numero di Opere create, numero di opere presenti a Napoli
 query_artisti="""
 PREFIX wd: <http://www.wikidata.org/entity/>
 PREFIX wdt: <http://www.wikidata.org/prop/direct/>
@@ -53,8 +54,8 @@ PREFIX wdt: <http://www.wikidata.org/prop/direct/>
 PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
 PREFIX schema: <http://schema.org/>
 
-SELECT DISTINCT ?opera ?nome ?descrizione ?anno
-       ?altezza ?larghezza ?tecnica ?museoNome ?tipo
+SELECT DISTINCT ?opera ?museo ?nome ?descrizione ?anno
+       ?altezza ?larghezza ?tecnica ?museoNome ?tipoLabel
        (GROUP_CONCAT(DISTINCT ?depictsNome; SEPARATOR=", ") AS ?soggetti)
 WHERE {
     ?opera wdt:P170 wd:Q42207 .
@@ -67,6 +68,8 @@ WHERE {
         wd:Q848330    # tondo
     }
     ?opera wdt:P31 ?tipo .
+    ?tipo rdfs:label ?tipoLabel .
+    FILTER(lang(?tipoLabel) = "it")
 
     OPTIONAL { ?opera rdfs:label ?nomeIT . FILTER(lang(?nomeIT) = "it") }
     OPTIONAL { ?opera rdfs:label ?nomeEN . FILTER(lang(?nomeEN) = "en") }
@@ -95,17 +98,17 @@ WHERE {
         FILTER(lang(?depictsNome) = "it")
     }
 }
-GROUP BY ?opera ?nome ?descrizione ?anno ?altezza ?larghezza ?tecnica ?museoNome ?tipo
+GROUP BY ?opera ?museo ?nome ?descrizione ?anno ?altezza ?larghezza ?tecnica ?museoNome ?tipoLabel
 """
-# query 2: per le opere di caracciolo a napoli
+# Query OPERE CARACCIOLO, come prima sono tutte non solo quelle di Napoli
 query_opere_caracciolo="""
 PREFIX wd: <http://www.wikidata.org/entity/>
 PREFIX wdt: <http://www.wikidata.org/prop/direct/>
 PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
 PREFIX schema: <http://schema.org/>
 
-SELECT DISTINCT ?opera ?nome ?descrizione ?anno
-       ?altezza ?larghezza ?tecnica ?museoNome ?tipo
+SELECT DISTINCT ?opera ?museo ?nome ?descrizione ?anno
+       ?altezza ?larghezza ?tecnica ?museoNome ?tipoLabel
        (GROUP_CONCAT(DISTINCT ?depictsNome; SEPARATOR=", ") AS ?soggetti)
 WHERE {
     ?opera wdt:P170 wd:Q2519261 .
@@ -117,6 +120,8 @@ WHERE {
         wd:Q1278452   # ciclo di dipinti
     }
     ?opera wdt:P31 ?tipo .
+    ?tipo rdfs:label ?tipoLabel .
+    FILTER(lang(?tipoLabel) = "it")
 
     OPTIONAL { ?opera rdfs:label ?nomeIT . FILTER(lang(?nomeIT) = "it") }
     OPTIONAL { ?opera rdfs:label ?nomeEN . FILTER(lang(?nomeEN) = "en") }
@@ -145,9 +150,9 @@ WHERE {
         FILTER(lang(?depictsNome) = "it")
     }
 }
-GROUP BY ?opera ?nome ?descrizione ?anno ?altezza ?larghezza ?tecnica ?museoNome ?tipo
+GROUP BY ?opera ?museo ?nome ?descrizione ?anno ?altezza ?larghezza ?tecnica ?museoNome ?tipoLabel
 """
-# Query 3: per info sui musei di Napoli
+# Query MUSEI, sono le info su tutti i musei in cui ci sono le opere di Caravaggio e Caracciolo. Per quelle di Napoli filtriamo sul db
 query_musei= """
 PREFIX wd: <http://www.wikidata.org/entity/>
 PREFIX wdt: <http://www.wikidata.org/prop/direct/>
@@ -195,7 +200,7 @@ WHERE {
 }
 GROUP BY ?museo ?nomeMuseo
 """
-#esecuzione query
+# Esecuzione query, con time limit di wikidata
 USER_AGENT = "CaravaggioBot/1.0 (progetto universitario NLP; tuaemail@esempio.com)"
 
 def esegui_query(query, max_retry=5):
@@ -220,7 +225,23 @@ def esegui_query(query, max_retry=5):
     return []
 
 
-# WIKI API utilizzato per ottenere le descrizioni dalle pagine Wiki dato che sia su DBpedia che Wikidata non ci sono.
+# Salvo i dati in cache, così da evitare di richiamare ogni volta wiki che ci mette 3 anni...
+CACHE_FILE = "cache_sparql.json"
+
+def salva_cache(dati):
+    with open(CACHE_FILE, "w", encoding="utf-8") as f:
+        json.dump(dati, f, ensure_ascii=False, indent=2)
+    print("💾 Cache salvata!")
+
+def carica_cache():
+    if os.path.exists(CACHE_FILE):
+        with open(CACHE_FILE, "r", encoding="utf-8") as f:
+            print("📂 Cache trovata, carico dati locali...")
+            return json.load(f)
+    return None
+
+# WIKI API utilizzato per ottenere le descrizioni dalle pagine Wiki dato che sia su DBpedia
+# che Wikidata alcune informazioni sono mancanti
 WIKI_API     = "https://it.wikipedia.org/w/api.php"
 WIKI_HEADERS = {"User-Agent": "CaravaggioBot/1.0 (progetto universitario NLP)"}
 
@@ -274,11 +295,6 @@ MOVIMENTI_DEFAULT = {
     "Q2519261": "Caravaggismo, Barocco napoletano"
 }
 
-MOVIMENTI_DEFAULT = {
-    "Q42207":   "Barocco, Controriforma",
-    "Q2519261": "Caravaggismo, Barocco napoletano"
-}
-
 def estrai_artisti(risultati):
     artisti = []
     for r in risultati:
@@ -300,20 +316,17 @@ def estrai_artisti(risultati):
         })
     return artisti
 
-
+# Estrazione OPERE
 def estrai_opere(risultati, artista_id):
-    """
-    Converte i risultati SPARQL in dizionari pronti per Neo4j
-    e arricchisce con le descrizioni da Wikipedia IT.
-    """
     opere = []
     for r in risultati:
         opera_uri = r.get("opera",    {}).get("value", "")
         museo_uri = r.get("museo",    {}).get("value", "")
 
-        # Anno — Wikidata restituisce data ISO completa, prendiamo solo l'anno
         anno_raw = r.get("anno", {}).get("value", "")
         anno     = anno_raw[:4] if anno_raw else ""
+
+        tipo = r.get("tipoLabel", {}).get("value", "")
 
         opere.append({
             "wikidata_id": opera_uri.split("/")[-1],
@@ -326,20 +339,18 @@ def estrai_opere(risultati, artista_id):
             "museo_nome":  r.get("museoNome", {}).get("value", ""),
             "museo_id":    museo_uri.split("/")[-1] if museo_uri else "",
             "artista_id":  artista_id,
-            "descrizione": ""  # verrà riempita dopo
+            "descrizione": "",
+            "tipo":        tipo        # ← aggiunto
         })
 
-    # Arricchisci con descrizioni da Wikipedia IT
-    titoli = [o["titolo"] for o in opere]
-    print(f"   📖 Recupero descrizioni da Wikipedia per {len(titoli)} opere...")
+    titoli      = [o["titolo"] for o in opere]
     descrizioni = descrizioni_wikipedia(titoli)
-
     for opera in opere:
         opera["descrizione"] = descrizioni.get(opera["titolo"], "")
 
     return opere
 
-
+#ESTRAZIONE MUSEI
 def estrai_musei(risultati):
     """Converte i risultati SPARQL in dizionari pronti per Neo4j"""
     musei = []
@@ -379,6 +390,7 @@ def estrai_musei(risultati):
             "biglietto": r.get("fee", {}).get("value", "")
         })
     return musei
+
 
 if __name__ == "__main__":
     print("1. Query Artisti...")
