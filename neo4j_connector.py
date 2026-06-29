@@ -43,8 +43,7 @@ class Neo4jLoader:
             session.run("""
                 MERGE (o:Opera {wikidataId: $wikidata_id})
                 ON CREATE SET
-                    o.name        = $titolo,
-                    o.titolo      = $titolo,
+                    o.name      = $titolo,
                     o.anno        = $anno,
                     o.altezza     = $altezza,
                     o.larghezza   = $larghezza,
@@ -60,9 +59,8 @@ class Neo4jLoader:
 
                 WITH o
 
-                // Collega al museo solo se esiste già nel db
-                OPTIONAL MATCH (m:Museo {wikidataId: $museo_id})
-                FOREACH (_ IN CASE WHEN m IS NOT NULL THEN [1] ELSE [] END |
+                FOREACH (_ IN CASE WHEN $museo_id <> '' THEN [1] ELSE [] END |
+                    MERGE (m:Museo {wikidataId: $museo_id})
                     MERGE (o)-[:ESPOSTA_IN]->(m)
                 )
             """,
@@ -97,7 +95,7 @@ class Neo4jLoader:
 
                 WITH m
                 FOREACH (_ IN CASE WHEN $citta <> '' THEN [1] ELSE [] END |
-                    MERGE (c:Città {nome: $citta})
+                    MERGE (c:Città {name: $citta})
                     MERGE (m)-[:SITUATO_IN]->(c)
                 )
             """,

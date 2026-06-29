@@ -1,6 +1,6 @@
+
 ## Implementazione della Rag, collegando il db al LLM
 from neo4j import GraphDatabase
-from langchain_groq import ChatGroq
 from langchain.prompts import ChatPromptTemplate
 from mlx_lm import load, generate
 
@@ -11,12 +11,10 @@ USER     = "neo4j"
 PASSWORD = "CambioManuAle417"
 
 MODEL_NAME = "mlx-community/Meta-Llama-3.1-8B-Instruct-8bit"
-
-# ── Carica modello una volta sola ─────────────────────────────
 MODEL, TOKENIZER = load(MODEL_NAME)
-print("✅ Modello caricato!")
 
-# ── Connessione Neo4j ─────────────────────────────────────────
+
+# ── Connessione Neo4j
 driver = GraphDatabase.driver(URI, auth=(USER, PASSWORD))
 
 # ── Retriever ─────────────────────────────────────────────────
@@ -34,17 +32,17 @@ def recupera_contesto(domanda):
             MATCH (o:Opera)-[:DIPINTA_DA]->(a:Artista)
             OPTIONAL MATCH (o)-[:ESPOSTA_IN]->(m:Museo)
             OPTIONAL MATCH (m)-[:SITUATO_IN]->(c:Città)
-            WHERE toLower(o.titolo) CONTAINS toLower($domanda)
-            RETURN o.titolo      AS titolo,
+            WHERE toLower(o.name) CONTAINS toLower($domanda)
+            RETURN o.name      AS name,
                    o.anno        AS anno,
                    o.tecnica     AS tecnica,
                    o.soggetti    AS soggetti,
                    o.descrizione AS descrizione,
                    o.tipo        AS tipo,
-                   a.nome        AS artista,
-                   m.nome        AS museo,
+                   a.name        AS artista,
+                   m.name        AS museo,
                    m.indirizzo   AS indirizzo,
-                   c.nome        AS citta
+                   c.name        AS citta
             LIMIT 3
         """, domanda=domanda)
 
@@ -52,7 +50,7 @@ def recupera_contesto(domanda):
             citta   = r["citta"]   or "N/D"
             a_napoli = "A NAPOLI" if citta.lower() == "napoli" else "NON a Napoli"
             contesto.append(
-                f"Opera: {r['titolo']} [{a_napoli}]\n"
+                f"Opera: {r['name']} [{a_napoli}]\n"
                 f"Artista: {r['artista']}\n"
                 f"Anno: {r['anno']}\n"
                 f"Tipo: {r['tipo']}\n"
@@ -68,14 +66,14 @@ def recupera_contesto(domanda):
                 MATCH (o:Opera)-[:DIPINTA_DA]->(a:Artista)
                 OPTIONAL MATCH (o)-[:ESPOSTA_IN]->(m:Museo)
                 OPTIONAL MATCH (m)-[:SITUATO_IN]->(c:Città)
-                WHERE toLower(a.nome) CONTAINS toLower($domanda)
-                RETURN a.nome          AS artista,
+                WHERE toLower(a.name) CONTAINS toLower($domanda)
+                RETURN a.name          AS artista,
                        a.data_nascita  AS nascita,
                        a.luogo_nascita AS luogo,
                        a.movimenti     AS movimenti,
                        a.opere_notevoli AS notevoli,
-                       collect(DISTINCT o.titolo) AS opere,
-                       collect(DISTINCT m.nome)   AS musei
+                       collect(DISTINCT o.name) AS opere,
+                       collect(DISTINCT m.name)   AS musei
                 LIMIT 1
             """, domanda=domanda)
 
@@ -96,11 +94,11 @@ def recupera_contesto(domanda):
                 OPTIONAL MATCH (o)-[:ESPOSTA_IN]->(m:Museo)
                 OPTIONAL MATCH (m)-[:SITUATO_IN]->(c:Città)
                 WHERE toLower(o.soggetti) CONTAINS toLower($domanda)
-                RETURN o.titolo    AS titolo,
+                RETURN o.name    AS name,
                        o.soggetti  AS soggetti,
-                       a.nome      AS artista,
-                       m.nome      AS museo,
-                       c.nome      AS citta
+                       a.name      AS artista,
+                       m.name      AS museo,
+                       c.name      AS citta
                 LIMIT 3
             """, domanda=domanda)
 
@@ -108,7 +106,7 @@ def recupera_contesto(domanda):
                 citta    = r["citta"] or "N/D"
                 a_napoli = "A NAPOLI" if citta.lower() == "napoli" else "NON a Napoli"
                 contesto.append(
-                    f"Opera: {r['titolo']} [{a_napoli}]\n"
+                    f"Opera: {r['name']} [{a_napoli}]\n"
                     f"Artista: {r['artista']}\n"
                     f"Soggetti: {r['soggetti']}\n"
                     f"Museo: {r['museo']}, {citta}"
@@ -121,15 +119,15 @@ def recupera_contesto(domanda):
                 OPTIONAL MATCH (m)-[:SITUATO_IN]->(c:Città)
                 OPTIONAL MATCH (o:Opera)-[:ESPOSTA_IN]->(m)
                 OPTIONAL MATCH (o)-[:DIPINTA_DA]->(a:Artista)
-                WHERE toLower(m.nome) CONTAINS toLower($domanda)
-                RETURN m.nome        AS museo,
+                WHERE toLower(m.name) CONTAINS toLower($domanda)
+                RETURN m.name        AS museo,
                        m.indirizzo   AS indirizzo,
                        m.sito        AS sito,
                        m.telefono    AS telefono,
                        m.fondazione  AS fondazione,
                        m.biglietto   AS biglietto,
-                       c.nome        AS citta,
-                       collect(DISTINCT o.titolo) AS opere
+                       c.name        AS citta,
+                       collect(DISTINCT o.name) AS opere
                 LIMIT 1
             """, domanda=domanda)
 
@@ -154,29 +152,24 @@ Sei una guida esperta di Caravaggio e Caracciolo, principalmente sulle opere
 presenti a Napoli. Ti verranno poste domande sulle opere, sui musei e sugli artisti stessi.
 Rispondi in italiano, in modo chiaro e coinvolgente. Basati sulle informazioni presenti 
 nel Database per rispondere e se l'informazione non è presente, dillo chiaramente senza inventare. 
-"""
+ """
+
 
 def genera_risposta(domanda, messages):
-    """
-    Recupera il contesto da Neo4j e genera una risposta con LLM.
-    """
-    # Recupera contesto rilevante
     contesto = recupera_contesto(domanda)
+
+    # DEBUG — stampa il contesto recuperato
+    print(f"\n🔍 CONTESTO RECUPERATO:\n{contesto if contesto else 'VUOTO'}\n")
 
     if contesto:
         contenuto = f"Contesto dal database:\n{contesto}\n\nDomanda: {domanda}"
     else:
         contenuto = f"Domanda: {domanda}\n(Nessuna informazione trovata nel database)"
 
-    # Aggiunge la domanda alla cronologia
     messages.append({"role": "user", "content": contenuto})
-
-    # Genera risposta
-    prompt   = TOKENIZER.apply_chat_template(messages, add_generation_prompt=True)
+    prompt = TOKENIZER.apply_chat_template(messages, add_generation_prompt=True)
     risposta = generate(MODEL, TOKENIZER, prompt=prompt,
                         max_tokens=500, verbose=False)
-
-    # Salva risposta nella cronologia
     messages.append({"role": "assistant", "content": risposta})
 
     return risposta, messages
@@ -187,10 +180,11 @@ if __name__ == "__main__":
     messages = [{"role": "system", "content": SYSTEM_PROMPT}]
 
     domande_test = [
-        "Dove si trova la Flagellazione di Cristo?",
-        "Dimmi qualcosa su Caravaggio",
-        "Quali opere hanno degli angeli?",
-        "Cosa c'è al Pio Monte della Misericordia?"
+        "Chi ha dipinto il 'Ritratto di papa Paolo V'?",
+        "Dove posso trovare il 'Ritratto di papa Paolo V'?",
+        "Quale opera di Caravaggio contiene papa Paolo V?",
+        "Ci sono altre opere di Caravaggio nello stesso museo dove è esposto il 'Ritratto di papa Paolo V'?",
+        "Quali sono le opere di Caravaggio presenti a Napoli?"
     ]
 
     for domanda in domande_test:
@@ -200,3 +194,5 @@ if __name__ == "__main__":
         print("─" * 60)
 
     driver.close()
+
+
