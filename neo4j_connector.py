@@ -16,7 +16,7 @@ class Neo4jLoader:
         """Cancella tutto il grafo prima di reinserire i dati"""
         with self.driver.session() as session:
             session.run("MATCH (n) DETACH DELETE n")
-        print("🗑️  Database svuotato")
+        print("Database svuotato")
 
     # ── Inserimento Artista ───────────────────────────────────
     def inserisci_artista(self, artista):

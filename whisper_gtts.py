@@ -5,13 +5,13 @@ import torch
 from transformers import pipeline
 from mlx_lm import load, generate
 from gtts import gTTS
-from prova_rag import genera_risposta
+from rag import genera_risposta
 
 SR = 16000
 # Whisper su MPS (GPU Apple) se disponibile, altrimenti CPU
 DEVICE = "mps" if torch.backends.mps.is_available() else "cpu"
 transcriber = pipeline("automatic-speech-recognition",
-                       model="openai/whisper-large-v3", device=DEVICE)
+                       model="openai/whisper-large-v3", device='cpu')
 
 
 def parla(testo):

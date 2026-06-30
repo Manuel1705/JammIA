@@ -68,8 +68,10 @@ WHERE {
         wd:Q848330    # tondo
     }
     ?opera wdt:P31 ?tipo .
-    ?tipo rdfs:label ?tipoLabel .
-    FILTER(lang(?tipoLabel) = "it")
+    
+    OPTIONAL { ?tipo rdfs:label ?tipoIT . FILTER(lang(?tipoIT) = "it") }
+    OPTIONAL { ?tipo rdfs:label ?tipoEN . FILTER(lang(?tipoEN) = "en") }
+    BIND(COALESCE(?tipoIT, ?tipoEN, "Dipinto") AS ?tipoLabel)
 
     OPTIONAL { ?opera rdfs:label ?nomeIT . FILTER(lang(?nomeIT) = "it") }
     OPTIONAL { ?opera rdfs:label ?nomeEN . FILTER(lang(?nomeEN) = "en") }
@@ -82,16 +84,24 @@ WHERE {
     OPTIONAL { ?opera wdt:P571 ?anno . }
     OPTIONAL { ?opera wdt:P2048 ?altezza . }
     OPTIONAL { ?opera wdt:P2049 ?larghezza . }
+    
     OPTIONAL {
         ?opera wdt:P186 ?mat .
         ?mat rdfs:label ?tecnica .
         FILTER(lang(?tecnica) = "it")
     }
+    
+    # Cerchiamo il luogo sia tramite P276 (luogo) che P195 (collezione)
     OPTIONAL {
-        ?opera wdt:P276 ?museo .
-        ?museo rdfs:label ?museoNome .
-        FILTER(lang(?museoNome) = "it")
+        { ?opera wdt:P276 ?museo . }
+        UNION
+        { ?opera wdt:P195 ?museo . }
+        
+        OPTIONAL { ?museo rdfs:label ?mIT . FILTER(lang(?mIT) = "it") }
+        OPTIONAL { ?museo rdfs:label ?mEN . FILTER(lang(?mEN) = "en") }
+        BIND(COALESCE(?mIT, ?mEN, "Museo Sconosciuto") AS ?museoNome)
     }
+    
     OPTIONAL {
         ?opera wdt:P180 ?depicts .
         ?depicts rdfs:label ?depictsNome .
@@ -152,7 +162,8 @@ WHERE {
 }
 GROUP BY ?opera ?museo ?nome ?descrizione ?anno ?altezza ?larghezza ?tecnica ?museoNome ?tipoLabel
 """
-# Query MUSEI, sono le info su tutti i musei in cui ci sono le opere di Caravaggio e Caracciolo. Per quelle di Napoli filtriamo sul db
+# Query MUSEI, sono le info su tutti i musei in cui ci sono le opere di Caravaggio e Caracciolo.
+# Per quelle di Napoli filtriamo sul db
 query_musei= """
 PREFIX wd: <http://www.wikidata.org/entity/>
 PREFIX wdt: <http://www.wikidata.org/prop/direct/>
@@ -166,14 +177,14 @@ SELECT DISTINCT ?museo ?nomeMuseo
        (SAMPLE(?telefono)    AS ?telefono)
        (SAMPLE(?fondazione)  AS ?fondazione)
        (SAMPLE(?coordinate)  AS ?coordinate)
-       (SAMPLE(?cittaNome)   AS ?citta)
+       (SAMPLE(?cittaPulita) AS ?citta) # ← Usiamo la città ripulita
        (SAMPLE(?fee)         AS ?fee)
 WHERE {
     {   ?opera wdt:P170 wd:Q42207 .
-        ?opera wdt:P276 ?museo . }
+        { ?opera wdt:P276 ?museo . } UNION { ?opera wdt:P195 ?museo . } }
     UNION
     {   ?opera wdt:P170 wd:Q2519261 .
-        ?opera wdt:P276 ?museo . }
+        { ?opera wdt:P276 ?museo . } UNION { ?opera wdt:P195 ?museo . } }
 
     ?museo rdfs:label ?nomeMuseo .
     FILTER(lang(?nomeMuseo) = "it")
@@ -192,10 +203,14 @@ WHERE {
     OPTIONAL { ?museo wdt:P571 ?fondazione .}
     OPTIONAL { ?museo wdt:P625 ?coordinate .}
     OPTIONAL { ?museo wdt:P2555 ?fee .      }
+    
     OPTIONAL {
-        ?museo wdt:P131 ?citta .
-        ?citta rdfs:label ?cittaNome .
-        FILTER(lang(?cittaNome) = "it")
+        # P131 (unità amministrativa) o P276 (luogo)
+        { ?museo wdt:P131 ?citta . } UNION { ?museo wdt:P276 ?citta . }
+        
+        OPTIONAL { ?citta rdfs:label ?cittaIT . FILTER(lang(?cittaIT) = "it") }
+        OPTIONAL { ?citta rdfs:label ?cittaEN . FILTER(lang(?cittaEN) = "en") }
+        BIND(COALESCE(?cittaIT, ?cittaEN) AS ?cittaPulita)
     }
 }
 GROUP BY ?museo ?nomeMuseo
@@ -220,7 +235,7 @@ def esegui_query(query, max_retry=5):
                 print(f"   ⚠️  Rate limit! Attendo {attesa} secondi...")
                 time.sleep(attesa)
             else:
-                print(f"   ❌ Errore: {e}")
+                print(f" Errore: {e}")
                 return []
     return []
 
@@ -231,12 +246,12 @@ CACHE_FILE = "cache_sparql.json"
 def salva_cache(dati):
     with open(CACHE_FILE, "w", encoding="utf-8") as f:
         json.dump(dati, f, ensure_ascii=False, indent=2)
-    print("💾 Cache salvata!")
+    print(" Cache salvata!")
 
 def carica_cache():
     if os.path.exists(CACHE_FILE):
         with open(CACHE_FILE, "r", encoding="utf-8") as f:
-            print("📂 Cache trovata, carico dati locali...")
+            print(" Cache trovata, carico dati locali...")
             return json.load(f)
     return None
 
