@@ -1,4 +1,6 @@
 import json
+import os
+import time
 import urllib.parse
 import urllib.request
 
@@ -8,11 +10,26 @@ class Extractor:
     # che Wikidata alcune informazioni sono mancanti
     WIKI_API = "https://it.wikipedia.org/w/api.php"
     WIKI_HEADERS = {"User-Agent": "CaravaggioBot/1.0 (progetto universitario NLP)"}
+    CACHE_FILE = "cache_wikipedia.json"
 
     MOVIMENTI_DEFAULT = {
         "Q42207": "Barocco, Controriforma",
         "Q2519261": "Caravaggismo, Barocco napoletano"
     }
+
+    def __init__(self):
+        self._cache_wikipedia = self._carica_cache()
+
+    def _carica_cache(self):
+        if os.path.exists(self.CACHE_FILE):
+            with open(self.CACHE_FILE, "r", encoding="utf-8") as f:
+                print(" Cache Wikipedia trovata, carico dati locali...")
+                return json.load(f)
+        return {}
+
+    def _salva_cache(self):
+        with open(self.CACHE_FILE, "w", encoding="utf-8") as f:
+            json.dump(self._cache_wikipedia, f, ensure_ascii=False, indent=2)
 
     @staticmethod
     def _valore(binding, chiave, default=""):
@@ -20,9 +37,14 @@ class Extractor:
         return binding.get(chiave, {}).get("value", default)
 
     def descrizioni_wikipedia(self, nomi, batch=20, timeout=20):
-        risultati = {}
-        for i in range(0, len(nomi), batch):
-            gruppo = nomi[i:i + batch]
+        mancanti = [nome for nome in nomi if nome not in self._cache_wikipedia]
+
+        if not mancanti:
+            print(" Descrizioni già in cache, nessuna chiamata a Wikipedia.")
+            return {nome: self._cache_wikipedia[nome] for nome in nomi}
+
+        for i in range(0, len(mancanti), batch):
+            gruppo = mancanti[i:i + batch]
             params = {
                 "action": "query",
                 "format": "json",
@@ -35,10 +57,14 @@ class Extractor:
             }
             url = self.WIKI_API + "?" + urllib.parse.urlencode(params)
             req = urllib.request.Request(url, headers=self.WIKI_HEADERS)
+
+            time.sleep(1)  # throttling, per non incorrere in rate limit
             try:
                 with urllib.request.urlopen(req, timeout=timeout) as resp:
                     q = json.load(resp).get("query", {})
             except Exception as e:
+                # un solo tentativo per batch: chi fallisce resta fuori dalla cache
+                # e viene ritentato automaticamente alla prossima esecuzione
                 print(f"[Wikipedia] errore batch: {e}")
                 continue
 
@@ -58,9 +84,11 @@ class Extractor:
             for nome in gruppo:
                 finale = rimappa.get(nome, nome)
                 finale = rimappa.get(finale, finale)
-                risultati[nome] = titolo2estratto.get(finale, "")
+                self._cache_wikipedia[nome] = titolo2estratto.get(finale, "")
 
-        return risultati
+            self._salva_cache()  # salvo subito: se un batch successivo fallisce, questo non si perde
+
+        return {nome: self._cache_wikipedia.get(nome, "") for nome in nomi}
 
     # Estrazione ARTISTI
     def estrai_artisti(self, risultati):
