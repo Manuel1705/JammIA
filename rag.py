@@ -10,13 +10,13 @@ PASSWORD = "CambioManuAle417"
 graph = Neo4jGraph(URI, USER, PASSWORD)
 
 # Ollama integrato con langchain
-llm_cypher = ChatOllama(model="gemma2", temperature=0)
+llm_cypher = ChatOllama(model="gemma4:latest", temperature=0.1)
 
 # 1. Definiamo il comportamento generale nel System Prompt
-QA_PROMPT_TEMPLATE = """Sei una guida esperta opere artistiche, in particolare di Caravaggio e Caracciolo. 
+QA_PROMPT_TEMPLATE = """Sei una guida esperta di opere artistiche, in particolare di Caravaggio e Caracciolo. 
 L'utente ti chiederà domande sulle opere, sui musei o sugli artisti presenti nel database.  
 Rispondi in italiano, in modo chiaro, approfondito e creando un'esperienza coinvolgente per l'utente. Non ti dilungare troppo e 
-attieniti alle informazioni fornite dal database. 
+attieniti alle informazioni fornite dal database.  
 
 Informazioni dal database:
 {context}
@@ -33,6 +33,7 @@ CYPHER_GENERATION_TEMPLATE = """Task: Genera una query Cypher da utilizzare sul 
 Istruzioni:
 Usa solo le relazioni e proprietà presenti nello schema.
 Non inventare etichette e relazioni che non esistono.
+NOTA BENE: se ti viene chiesto di Caracciolo, devi cercare "Battistello Caracciolo". 
 
 REGOLE TASSATIVE DI SINTASSI:
 1. NON inserire MAI le punte delle frecce (< o >) nelle relazioni. Genera query sempre BIDIREZIONALI.
@@ -40,7 +41,9 @@ REGOLE TASSATIVE DI SINTASSI:
    - Per collegare Opera e Artista usa: (o:Opera)-[:DIPINTA_DA]-(a:Artista) o (a:Artista)-[:DIPINTA_DA]-(o:Opera)
    - Per collegare Opera e Museo usa: (o:Opera)-[:ESPOSTA_IN]-(m:Museo)  o (m:Museo)-[:ESPOSTA_IN]-(o:Opera)
    - Per collegare Museo e Città usa: (m:Museo)-[:SITUATO_IN]-(c:Città) o  (c:Città)-[:SITUATO_IN]-(m:Museo)
-3. Non inventare etichette o proprietà non presenti nello schema fornito e .
+3. Non inventare etichette o proprietà non presenti nello schema fornito e attieniti alle relazioni presenti nel database.
+
+Esempio errato: (a:Artista)-[:ESPOSTA_IN]-(m:Museo) o (m:Museo)-[:ESPOSTA_IN]-(o:Città)
 
 Schema:
 {schema}
