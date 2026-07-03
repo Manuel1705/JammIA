@@ -1,0 +1,53 @@
+name,description,query,id,parentId,isFolder
+Orari e prezzi,,,0,,true
+Palazzo Reale,,"MATCH (m:Museo {name:""Palazzo Reale""})-[:SITUATO_IN]-(c:Città {name:""Napoli""})
+SET m.biglietto = ""Intero: € 15,00
+Aperture serali straordinarie: € 5,00
+Ridotto: € 2,00 (Cittadini CE 18-25 anni non compiuti)
+Gratuito minori di 18 anni"" , m.orari = ""9:00-20:00, ultimo ingresso 19:00""
+RETURN m",1,0,false
+Santa Maria della Stella,,"MATCH (m:Museo {name:""chiesa di Santa Maria della Stella""})-[:SITUATO_IN]-(c:Città {name:""Napoli""})
+SET m.biglietto = ""gratuito"",m.indirizzo = ""Via Stella, 25, 80137 Napoli NA, Italia"" , m.orari = ""Lunedi	16:00-20:30
+Martedi	16:00-18:00
+Mercoledi	16:00-18:00
+Giovedi	16:00-18:00
+Venerdi	16:00-18:00
+Sabato	10:00-12:00 e 16:00-18:00
+Domenica	10:00-12:30 e 17:00-19:00""
+RETURN m",2,0,false
+Certosa di San Martino,,"MATCH (m:Museo {name:""Museo nazionale di San Martino""})-[:SITUATO_IN]-(c:Città {name:""Napoli""})
+SET m.biglietto = ""Costo del biglietto intero dalle 8.30 alle 17.00 - 6€
+Costo del biglietti tra 18 e 25 anni - 2€
+Gratuito al di sotto dei 18 anni e aventi diritto"", m.orari = ""8:30-18:30 dal lunedì alla domenica, martedì chiuso""
+RETURN m",3,0,false
+Museo di Capodimonte,,"MATCH (m:Museo {name:""Museo nazionale di Capodimonte""})-[:SITUATO_IN]-(c:Città {name:""Napoli""})
+SET m.biglietto = ""– € 15 intero
+
+– € 14 per i biglietti acquistati da gruppi formati da più di 15 persone paganti (con età superiore ai 25 anni)
+
+– € 12 per i biglietti acquistati e validati nelle fasce orarie 8.30/9.30 e 17.30/18.30 (termine ultimo di vendita dei biglietti)
+
+– € 2 ridotto per i cittadini dell’Unione Europea di età compresa tra i 18 e i 25 anni non compiuti (fino al giorno del compimento del 25esimo anno di età incluso).
+
+– Gratuito per i minori di anni 18, aventi diritto, per i portatori di handicap e un loro familiare o altro accompagnatore che dimostri la propria appartenenza a servizi di assistenza socio-sanitaria.
+- Ogni prima domenica del mese, il 25 aprile, il 2 giugno e il 4 novembre l’ingresso al Museo sarà gratuito "", m.orari = ""aperto tutti i giorni tranne il mercoledì dalle 8.30 alle 19.30 (ultimo ingresso alle 18.30)""
+RETURN m",4,0,false
+Quadreria Girolamini,,"MATCH (m:Museo {name:""Quadreria dei Girolamini""})-[:SITUATO_IN]-(c:Città {name:""Napoli""})
+SET m.biglietto = ""biglietto intero 5€, ridotto 2€"", m.orari = ""dal martedì al venerdì, ore 10.00 – 18.30 con ultimo ingresso alle 17.45;
+sabato, domenica e festivi ore 08.30 – 13.30 con ultimo ingresso alle 12.45;
+chiusa i lunedì""
+RETURN m",5,0,false
+Pio Monte della Misericordia,,"MATCH (m:Museo {name:""Pio Monte della Misericordia""})-[:SITUATO_IN]-(c:Città {name:""Napoli""})
+SET m.biglietto = ""intero 10€, ridotto 8€, famiglia 20€, gruppi scolastici 3€"", m.orari = ""Dal Lunedi al Sabato dalle ore 10:00 alle ore 18:00 (ultimo biglietto alle ore 17:30) 
+Domenica dalle ore 9:00 alle ore 14:30 (ultimo biglietto alle ore 14:00)""
+RETURN m",6,0,false
+Gallerie d'Italia,,,7,,true
+Rimozione Gallerie d'Italia,,"MATCH (m:Museo {name:""Gallerie d'Italia""})-[r:SITUATO_IN]-(c:Città {name:""Milano""})
+DELETE r",8,7,false
+Collegamento Napoli,,"MATCH (m:Museo {name: ""Gallerie d'Italia""})
+MERGE (c:Città {name: ""Napoli""})
+MERGE (m)-[:SITUATO_IN]->(c)
+SET m.indirizzo = ""Via Toledo, 177, 80134 Napoli NA, Italia"", m.biglietto = ""Intero 8 €, Ridotto Over 65 4€, Gratuito Under 26, Scolaresche, Clienti Gruppo Intesa Sanpaolo"" , m.orari = ""Da martedì a venerdì: aperto dalle 10:00 alle 19.00
+Sabato e domenica: aperto dalle 10:00 alle 20:00
+Lunedì: chiuso. Ultimo ingresso un'ora prima della chiusura."" 
+RETURN m",9,7,false

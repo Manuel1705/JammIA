@@ -8,6 +8,7 @@ from langgraph.types import Command, interrupt
 class DialogState(TypedDict):
     domanda: str
     cronologia: List[dict]
+    sotto_domande: Optional[List[str]]
     artista_corrente: Optional[str]
     opera_corrente: Optional[str]
     museo_corrente: Optional[str]
@@ -66,78 +67,121 @@ class DialogManager:
             for turno in cronologia
         )
 
-    def _classifica_domanda(self, domanda: str, stato: DialogState) -> dict:
-        """Decide come gestire la domanda: se serve interrogare il database (QUERY), se manca
-        un'informazione necessaria per farlo (CHIARIMENTO), oppure se si può rispondere subito
-        senza alcuna query, come per saluti, ringraziamenti o commiati (DIRETTA)."""
+    def _analizza_domanda(self, domanda: str, stato: DialogState) -> dict:
+        """In UNA sola chiamata LLM classifica la domanda e, se è una QUERY, la scompone già nelle
+        sotto-domande atomiche. Ritorna uno di:
+        - {"tipo": "query", "sotto_domande": [...]}
+        - {"tipo": "chiarimento", "testo": ...}
+        - {"tipo": "diretta", "testo": ...}"""
         prompt = f"""Sei l'instradatore di un chatbot su Caravaggio, Caracciolo, le loro opere e i musei di
-Napoli che le ospitano. Classifica la domanda dell'utente in una di queste tre categorie, usando anche
-gli scambi precedenti come contesto:
+Napoli che le ospitano. Analizza la richiesta dell'utente e classificala in una di queste tre categorie,
+usando anche gli scambi precedenti come contesto:
 
-1. QUERY — la domanda richiede di consultare informazioni su opere, artisti o musei (conteggi, nomi,
-   descrizioni, luoghi, date, ecc.) ed è comprensibile, anche grazie a un riferimento implicito
-   risolvibile dagli scambi precedenti (es. "questi quadri" dopo aver appena parlato di 2 quadri).
-   USA QUERY OGNI VOLTA CHE LA DOMANDA MENZIONA (anche implicitamente) opere, artisti, musei, conteggi,
-   nomi, luoghi o date: in caso di dubbio, scegli sempre QUERY.
-2. CHIARIMENTO — la domanda richiederebbe una query, ma usa un riferimento implicito (es. "lui",
-   "quell'opera") che né la domanda né gli scambi precedenti chiariscono.
-3. DIRETTA — la domanda NON richiede alcuna consultazione del database: SOLO saluti, ringraziamenti,
-   commiati o small talk puro, senza alcun riferimento a opere/artisti/musei.
-
-Esempi:
-- "Quanti quadri di Caravaggio sono a Napoli?" -> QUERY (chiede un conteggio su opere)
-- "Come si chiamano queste opere?" (dopo aver parlato di alcune opere) -> QUERY (riferimento risolvibile)
-- "Chi l'ha dipinta?" (senza aver mai nominato un'opera prima) -> CHIARIMENTO
-- "Grazie mille, è stato utile!" -> DIRETTA
-- "Ciao, come funzioni?" -> DIRETTA
+1. QUERY — la richiesta contiene ANCHE UNA SOLA domanda di informazioni su opere, artisti o musei
+   (conteggi, nomi, descrizioni, luoghi, date, ecc.), comprensibile anche grazie a un riferimento
+   implicito risolvibile dagli scambi precedenti (es. "questi quadri" dopo aver appena parlato di 2 quadri).
+   Vale anche se la richiesta è COMPOSTA e una parte è fuori tema o fuori ambito (es. un altro artista non
+   trattato): basta che una parte richieda dati su opere/artisti/musei. In caso di dubbio, scegli QUERY.
+   Se è QUERY, SCOMPONI la richiesta nelle singole domande atomiche che la compongono: ognuna autonoma,
+   su UN solo argomento, riscritta in forma completa risolvendo i riferimenti impliciti dagli scambi
+   precedenti (es. "queste opere" -> le opere di cui si è parlato).
+2. CHIARIMENTO — la richiesta richiederebbe una query, ma usa un riferimento implicito (es. "lui",
+   "quell'opera") che né la richiesta né gli scambi precedenti chiariscono.
+3. DIRETTA — SOLO messaggi puramente sociali (saluti, ringraziamenti, commiati, small talk) che NON
+   contengono NESSUNA richiesta di informazioni. Se il messaggio contiene una qualsiasi domanda su
+   opere/artisti/musei, NON è mai DIRETTA: è QUERY.
 
 Scambi precedenti (dal più vecchio al più recente):
 {self._cronologia_recente(stato)}
 
-Domanda dell'utente: {domanda}
+Richiesta dell'utente: {domanda}
 
-Rispondi SOLO in uno di questi tre formati esatti, senza altro testo:
+Rispondi SOLO in uno di questi formati esatti, senza altro testo:
+- se QUERY: la PRIMA riga è esattamente "QUERY", poi UNA domanda atomica per riga (senza numeri né trattini);
+  se la richiesta è già una singola domanda, metti quell'unica domanda sulla riga dopo "QUERY".
+- se CHIARIMENTO: "CHIARIMENTO: <unica domanda di chiarimento, breve e diretta>"
+- se DIRETTA: "DIRETTA: <risposta breve e cordiale in italiano>"
+
+Esempi:
+Richiesta: "Quanti quadri di Caravaggio sono a Napoli?"
 QUERY
-CHIARIMENTO: <unica domanda di chiarimento da fare all'utente, breve e diretta>
-DIRETTA: <risposta breve e cordiale in italiano da dare direttamente all'utente>"""
+Quanti quadri di Caravaggio sono a Napoli?
+
+Richiesta: "Come si chiamano queste opere e quante ne ha fatte Botticelli?"
+QUERY
+Come si chiamano queste opere?
+Quante opere ha fatto Botticelli?
+
+Richiesta: "Chi l'ha dipinta?" (nessuna opera nominata prima)
+CHIARIMENTO: Di quale opera stai parlando?
+
+Richiesta: "Grazie mille!"
+DIRETTA: Prego, è stato un piacere!"""
 
         risposta = self._llm_riferimenti.invoke(prompt).content.strip()
-        maiuscolo = risposta.upper()
+        righe = [r.strip() for r in risposta.splitlines() if r.strip()]
+        prima = righe[0] if righe else ""
+        maiuscolo = prima.upper()
 
         if maiuscolo.startswith("CHIARIMENTO"):
-            testo = risposta.split(":", 1)[1].strip() if ":" in risposta else risposta[len("CHIARIMENTO"):].strip()
+            testo = prima.split(":", 1)[1].strip() if ":" in prima else prima[len("CHIARIMENTO"):].strip()
             return {"tipo": "chiarimento", "testo": testo}
         if maiuscolo.startswith("DIRETTA"):
-            testo = risposta.split(":", 1)[1].strip() if ":" in risposta else risposta[len("DIRETTA"):].strip()
+            testo = prima.split(":", 1)[1].strip() if ":" in prima else prima[len("DIRETTA"):].strip()
             return {"tipo": "diretta", "testo": testo}
-        return {"tipo": "query"}
+
+        # QUERY: le sotto-domande sono le righe successive (ignorando l'eventuale riga "QUERY")
+        sotto_domande = [r.strip(" -*\t") for r in righe if r.strip().upper() != "QUERY"]
+        return {"tipo": "query", "sotto_domande": sotto_domande or [domanda]}
 
     def _risolvi_riferimenti(self, state: DialogState) -> dict:
         domanda = state["domanda"]
-        classificazione = self._classifica_domanda(domanda, state)
+        analisi = self._analizza_domanda(domanda, state)
 
-        if classificazione["tipo"] == "chiarimento":
+        if analisi["tipo"] == "chiarimento":
             # mette in pausa il grafo: chi chiama deve chiedere il chiarimento all'utente
             # (via gTTS) e poi far ripartire il grafo con rispondi_chiarimento()
-            risposta_utente = interrupt(classificazione["testo"])
-            return {"domanda": f"{domanda} (chiarimento: {risposta_utente})"}
+            risposta_utente = interrupt(analisi["testo"])
+            # dopo il chiarimento trattiamo la domanda chiarita come un'unica sotto-domanda
+            domanda_chiarita = f"{domanda} (chiarimento: {risposta_utente})"
+            return {"domanda": domanda_chiarita, "sotto_domande": [domanda_chiarita]}
 
-        if classificazione["tipo"] == "diretta":
+        if analisi["tipo"] == "diretta":
             # nessuna query necessaria: la risposta è già pronta, si salta genera_risposta
-            return {"domanda": domanda, "risposta": classificazione["testo"]}
+            return {"domanda": domanda, "risposta": analisi["testo"]}
 
-        return {"domanda": domanda}
+        return {"domanda": domanda, "sotto_domande": analisi["sotto_domande"]}
 
     def _genera_risposta(self, state: DialogState) -> dict:
-        # includo gli scambi precedenti nella domanda inviata alla chain, così anche la
-        # generazione della query Cypher può risolvere riferimenti impliciti come "questi quadri"
-        domanda_con_contesto = f"""Scambi precedenti della conversazione (dal più vecchio al più recente):
-{self._cronologia_recente(state)}
+        cronologia = self._cronologia_recente(state)
+        sotto_domande = state.get("sotto_domande") or [state["domanda"]]
 
-Nuova domanda dell'utente, da usare per generare la query: {state["domanda"]}"""
+        risposte = []
+        for sotto_domanda in sotto_domande:
+            # includo gli scambi precedenti così la generazione della query Cypher può risolvere
+            # eventuali riferimenti impliciti ancora presenti nella singola sotto-domanda
+            domanda_con_contesto = f"""Scambi precedenti della conversazione (dal più vecchio al più recente):
+{cronologia}
 
-        risultato = self._chain.invoke({"query": domanda_con_contesto})
-        return {"risposta": risultato["result"]}
+Nuova domanda dell'utente, da usare per generare la query: {sotto_domanda}"""
+            risposte.append(self._invoca_chain_con_retry(sotto_domanda, domanda_con_contesto))
+
+        risposta_finale = " ".join(r for r in risposte if r) or "Si è verificato un errore."
+        return {"risposta": risposta_finale}
+
+    def _invoca_chain_con_retry(self, sotto_domanda: str, domanda_con_contesto: str, max_retry: int = 3) -> str:
+        """Interroga la chain riprovando se la generazione della query Cypher fallisce (i modelli
+        piccoli producono a volte Cypher sintatticamente errato; essendo la generazione stocastica,
+        un nuovo tentativo spesso produce una query valida). Se tutti i tentativi falliscono, ritorna
+        un messaggio di fallback per quella sotto-domanda invece di scartarla in silenzio."""
+        for tentativo in range(max_retry):
+            try:
+                risultato = self._chain.invoke({"query": domanda_con_contesto})
+                return risultato["result"].strip()
+            except Exception as e:
+                print(f"[DialogManager] tentativo {tentativo + 1}/{max_retry} fallito "
+                      f"su sotto-domanda {sotto_domanda!r}: {e}")
+        return f"Non sono riuscito a recuperare le informazioni per: «{sotto_domanda}»."
 
     @staticmethod
     def _aggiorna_stato(state: DialogState) -> dict:

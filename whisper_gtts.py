@@ -3,6 +3,7 @@ import sounddevice as sd
 import numpy as np
 import subprocess
 import sys
+import uuid
 import torch
 from transformers import pipeline
 from gtts import gTTS
@@ -16,7 +17,7 @@ transcriber = pipeline("automatic-speech-recognition",
                        model="openai/whisper-large-v3", device=DEVICE)
 
 
-def parla(testo, velocita=1.5):
+def parla(testo, velocita=1.3):
     """Riproduce la risposta. Se l'utente preme Invio mentre l'audio è in corso,
     interrompe subito la riproduzione. Ritorna True se è stata interrotta (segnale
     per il loop principale di passare direttamente all'ascolto, senza richiedere
@@ -48,7 +49,9 @@ def registra():
 
 
 dialog_manager = DialogManager(chain, llm_cypher)
-THREAD_ID = "conversazione_vocale"
+# un thread_id nuovo ad ogni avvio dello script, così ogni sessione parte con una
+# cronologia pulita invece di riprendere (e accumulare all'infinito) quella di sessioni precedenti
+THREAD_ID = str(uuid.uuid4())
 
 print("\nConversazione avviata. Premi Invio per parlare, scrivi 'esci' per terminare.")
 salta_prompt = False
