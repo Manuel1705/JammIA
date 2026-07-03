@@ -1,26 +1,29 @@
-# connessione neo4j db
+"""Scrittura di artisti, opere e musei nel database a grafo Neo4j.
+
+Il grafo modella tre tipi di nodo (Artista, Opera, Museo, più Città) collegati dalle relazioni
+DIPINTA_DA (Opera→Artista), ESPOSTA_IN (Opera→Museo) e SITUATO_IN (Museo→Città).
+"""
 from neo4j import GraphDatabase
 
-URI = "neo4j://127.0.0.1:7687"
-USER = "neo4j"
-PASSWORD = "password"
+from chatbot import config
 
 
 class Neo4jLoader:
     def __init__(self):
-        self.driver = GraphDatabase.driver(URI, auth=(USER, PASSWORD))
+        self.driver = GraphDatabase.driver(
+            config.NEO4J_URI, auth=(config.NEO4J_USER, config.NEO4J_PASSWORD)
+        )
 
     def close(self):
         self.driver.close()
 
     def svuota_database(self):
-        """Cancella tutto il grafo prima di reinserire i dati"""
+        """Cancella tutto il grafo prima di reinserire i dati."""
         with self.driver.session() as session:
             session.run("MATCH (n) DETACH DELETE n")
         print("Database svuotato")
 
-    # ── Inserimento Artista ───────────────────────────────────
-    def inserisci_artista(self, artista):
+    def inserisci_artista(self, artista: dict):
         with self.driver.session() as session:
             session.run("""
                 MERGE (a:Artista {wikidataId: $wikidata_id})
@@ -36,11 +39,11 @@ class Neo4jLoader:
                         data_nascita=artista["data_nascita"],
                         luogo_nascita=artista["luogo_nascita"],
                         movimenti=artista["movimenti"],
-                        opere_notevoli=artista["opere_notevoli"]
+                        opere_notevoli=artista["opere_notevoli"],
                         )
 
-    # ── Inserimento Opera ─────────────────────────────────────
-    def inserisci_opera(self, opera):
+    def inserisci_opera(self, opera: dict):
+        # collega l'opera all'artista (sempre) e al museo (solo se presente, via FOREACH condizionale)
         with self.driver.session() as session:
             session.run("""
                 MERGE (o:Opera {wikidataId: $wikidata_id})
@@ -76,11 +79,10 @@ class Neo4jLoader:
                         descrizione=opera["descrizione"],
                         tipo=opera["tipo"],
                         artista_id=opera["artista_id"],
-                        museo_id=opera["museo_id"]
+                        museo_id=opera["museo_id"],
                         )
 
-    # ── Inserimento Museo ─────────────────────────────────────
-    def inserisci_museo(self, museo):
+    def inserisci_museo(self, museo: dict):
         with self.driver.session() as session:
             session.run("""
                 MERGE (m:Museo {wikidataId: $wikidata_id})
@@ -111,5 +113,5 @@ class Neo4jLoader:
                         latitudine=museo["latitudine"],
                         longitudine=museo["longitudine"],
                         citta=museo["citta"],
-                        biglietto=museo["biglietto"]
+                        biglietto=museo["biglietto"],
                         )

@@ -1,8 +1,22 @@
+"""Gestione dello stato del dialogo tramite un grafo LangGraph.
+
+Il DialogManager fa da orchestratore tra l'utente e la catena RAG. Per ogni turno:
+1. `_analizza_domanda` — UNA chiamata LLM che classifica la richiesta (QUERY / CHIARIMENTO / DIRETTA)
+   e, se è una QUERY, la scompone già nelle sotto-domande atomiche auto-contenute.
+2. se serve un CHIARIMENTO, il grafo si mette in pausa con `interrupt()` e chi lo chiama deve
+   raccogliere la risposta dell'utente e riprendere con `rispondi_chiarimento()`.
+3. `_genera_risposta` — interroga la catena RAG per ogni sotto-domanda e unisce le risposte.
+
+Lo stato è persistito su SQLite (checkpointer), così sopravvive ai riavvii; ogni conversazione è
+identificata da un `thread_id`.
+"""
 from typing import List, Optional, TypedDict
 
 from langgraph.checkpoint.sqlite import SqliteSaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import Command, interrupt
+
+from chatbot import config
 
 
 class DialogState(TypedDict):
@@ -16,23 +30,16 @@ class DialogState(TypedDict):
 
 
 class DialogManager:
-    """Traccia lo stato della conversazione (artista/opera/museo 'a fuoco') tramite un grafo
-    LangGraph, così da poter risolvere riferimenti impliciti tra un turno e l'altro
-    (es. "chi l'ha dipinta?"). Se manca un'informazione necessaria, il grafo si mette in pausa
-    con interrupt() e chi lo chiama (es. il loop vocale) deve chiedere chiarimento all'utente
-    e poi riprendere con rispondi_chiarimento()."""
-
-    DB_FILE = "dialog_state.sqlite"
-
-    def __init__(self, chain, llm_riferimenti):
+    def __init__(self, chain, llm_riferimenti, db_file=None):
         """
-        chain: la GraphCypherQAChain (con .invoke({"query": ...}) -> {"result": ...}) usata per rispondere.
-        llm_riferimenti: chat model con .invoke(str) -> oggetto con .content, usato per decidere
-                          se la domanda ha bisogno di un chiarimento.
+        chain: la GraphCypherQAChain (`.invoke({"query": ...}) -> {"result": ...}`) usata per rispondere.
+        llm_riferimenti: chat model (`.invoke(str) -> oggetto con .content`) usato per classificare
+                         e scomporre la domanda.
+        db_file: percorso del checkpoint SQLite (default: config.DIALOG_DB).
         """
         self._chain = chain
         self._llm_riferimenti = llm_riferimenti
-        self._checkpointer_cm = SqliteSaver.from_conn_string(self.DB_FILE)
+        self._checkpointer_cm = SqliteSaver.from_conn_string(str(db_file or config.DIALOG_DB))
         self._checkpointer = self._checkpointer_cm.__enter__()
         self._graph = self._costruisci_grafo()
 
@@ -83,8 +90,11 @@ usando anche gli scambi precedenti come contesto:
    Vale anche se la richiesta è COMPOSTA e una parte è fuori tema o fuori ambito (es. un altro artista non
    trattato): basta che una parte richieda dati su opere/artisti/musei. In caso di dubbio, scegli QUERY.
    Se è QUERY, SCOMPONI la richiesta nelle singole domande atomiche che la compongono: ognuna autonoma,
-   su UN solo argomento, riscritta in forma completa risolvendo i riferimenti impliciti dagli scambi
-   precedenti (es. "queste opere" -> le opere di cui si è parlato).
+   su UN solo argomento, e COMPLETAMENTE AUTO-CONTENUTA. Sostituisci OGNI riferimento implicito
+   (dimostrativi come "questi/queste/quei", pronomi come "lui/lei/le", avverbi come "lì") con il nome
+   esplicito dell'entità preso dagli scambi precedenti (il titolo dell'opera, il nome dell'artista o del
+   museo). Nella sotto-domanda riscritta NON devono più comparire dimostrativi o pronomi: chi la legge non
+   deve aver bisogno della conversazione precedente per capirla.
 2. CHIARIMENTO — la richiesta richiederebbe una query, ma usa un riferimento implicito (es. "lui",
    "quell'opera") che né la richiesta né gli scambi precedenti chiariscono.
 3. DIRETTA — SOLO messaggi puramente sociali (saluti, ringraziamenti, commiati, small talk) che NON
@@ -107,9 +117,13 @@ Richiesta: "Quanti quadri di Caravaggio sono a Napoli?"
 QUERY
 Quanti quadri di Caravaggio sono a Napoli?
 
-Richiesta: "Come si chiamano queste opere e quante ne ha fatte Botticelli?"
+Richiesta: "Elencami questi quadri." (dopo aver parlato dei quadri di Caravaggio a Napoli)
 QUERY
-Come si chiamano queste opere?
+Quali sono i titoli dei quadri di Caravaggio esposti a Napoli?
+
+Richiesta: "Come si chiamano queste opere e quante ne ha fatte Botticelli?" (dopo aver parlato delle opere di Caravaggio a Napoli)
+QUERY
+Come si chiamano le opere di Caravaggio esposte a Napoli?
 Quante opere ha fatto Botticelli?
 
 Richiesta: "Chi l'ha dipinta?" (nessuna opera nominata prima)
@@ -138,33 +152,30 @@ DIRETTA: Prego, è stato un piacere!"""
         domanda = state["domanda"]
         analisi = self._analizza_domanda(domanda, state)
 
+        # NB: azzero SEMPRE la risposta del turno precedente. Restando persistita nel checkpoint
+        # SQLite, se non ripulita il conditional edge la scambierebbe per una risposta diretta di
+        # QUESTO turno, saltando genera_risposta e ripetendo la risposta vecchia (echo tra i turni).
         if analisi["tipo"] == "chiarimento":
             # mette in pausa il grafo: chi chiama deve chiedere il chiarimento all'utente
-            # (via gTTS) e poi far ripartire il grafo con rispondi_chiarimento()
+            # e poi far ripartire il grafo con rispondi_chiarimento()
             risposta_utente = interrupt(analisi["testo"])
             # dopo il chiarimento trattiamo la domanda chiarita come un'unica sotto-domanda
             domanda_chiarita = f"{domanda} (chiarimento: {risposta_utente})"
-            return {"domanda": domanda_chiarita, "sotto_domande": [domanda_chiarita]}
+            return {"domanda": domanda_chiarita, "sotto_domande": [domanda_chiarita], "risposta": None}
 
         if analisi["tipo"] == "diretta":
             # nessuna query necessaria: la risposta è già pronta, si salta genera_risposta
             return {"domanda": domanda, "risposta": analisi["testo"]}
 
-        return {"domanda": domanda, "sotto_domande": analisi["sotto_domande"]}
+        return {"domanda": domanda, "sotto_domande": analisi["sotto_domande"], "risposta": None}
 
     def _genera_risposta(self, state: DialogState) -> dict:
-        cronologia = self._cronologia_recente(state)
+        # le sotto-domande sono già auto-contenute (i riferimenti sono stati risolti in
+        # _analizza_domanda), quindi NON passo la cronologia alla chain: darla in pasto qui farebbe
+        # ricopiare al modello le risposte dei turni precedenti invece di usare il nuovo risultato
         sotto_domande = state.get("sotto_domande") or [state["domanda"]]
 
-        risposte = []
-        for sotto_domanda in sotto_domande:
-            # includo gli scambi precedenti così la generazione della query Cypher può risolvere
-            # eventuali riferimenti impliciti ancora presenti nella singola sotto-domanda
-            domanda_con_contesto = f"""Scambi precedenti della conversazione (dal più vecchio al più recente):
-{cronologia}
-
-Nuova domanda dell'utente, da usare per generare la query: {sotto_domanda}"""
-            risposte.append(self._invoca_chain_con_retry(sotto_domanda, domanda_con_contesto))
+        risposte = [self._invoca_chain_con_retry(sd, sd) for sd in sotto_domande]
 
         risposta_finale = " ".join(r for r in risposte if r) or "Si è verificato un errore."
         return {"risposta": risposta_finale}
@@ -194,14 +205,14 @@ Nuova domanda dell'utente, da usare per generare la query: {sotto_domanda}"""
         """Avvia un nuovo turno di conversazione.
         Ritorna {"tipo": "risposta", "testo": ...} se il turno è completo,
         oppure {"tipo": "chiarimento", "testo": ...} se serve chiedere qualcosa all'utente."""
-        config = {"configurable": {"thread_id": thread_id}}
-        risultato = self._graph.invoke({"domanda": domanda}, config=config)
+        config_grafo = {"configurable": {"thread_id": thread_id}}
+        risultato = self._graph.invoke({"domanda": domanda}, config=config_grafo)
         return self._interpreta_risultato(risultato)
 
     def rispondi_chiarimento(self, risposta_utente: str, thread_id: str = "default") -> dict:
         """Riprende un turno rimasto in pausa in attesa di un chiarimento dall'utente."""
-        config = {"configurable": {"thread_id": thread_id}}
-        risultato = self._graph.invoke(Command(resume=risposta_utente), config=config)
+        config_grafo = {"configurable": {"thread_id": thread_id}}
+        risultato = self._graph.invoke(Command(resume=risposta_utente), config=config_grafo)
         return self._interpreta_risultato(risultato)
 
     @staticmethod

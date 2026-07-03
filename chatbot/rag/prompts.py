@@ -1,18 +1,7 @@
-from langchain_neo4j import Neo4jGraph
-from langchain_neo4j.chains.graph_qa.cypher import GraphCypherQAChain
-from langchain_ollama import ChatOllama
+"""Template dei prompt usati dalla catena RAG (generazione Cypher e risposta in linguaggio naturale)."""
 from langchain_core.prompts import PromptTemplate
 
-URI = "neo4j://127.0.0.1:7687"
-USER = "neo4j"
-PASSWORD = "password"
-
-graph = Neo4jGraph(URI, USER, PASSWORD)
-
-# Ollama integrato con langchain
-llm_cypher = ChatOllama(model="gemma4:latest", temperature=0.1)
-
-# 1. Definiamo il comportamento generale nel System Prompt
+# Prompt che trasforma il risultato della query in una risposta discorsiva per l'utente.
 QA_PROMPT_TEMPLATE = """Sei una guida esperta di opere artistiche, in particolare di Caravaggio e Caracciolo.
 L'utente ti chiederà domande sulle opere, sui musei o sugli artisti presenti nel database.
 
@@ -24,16 +13,19 @@ REGOLE DI STILE (obbligatorie):
   come se conoscessi già il fatto, in modo naturale e diretto (es. "A Napoli si trovano 14 opere di
   Caracciolo." invece di "Secondo le informazioni del database, il numero di opere è 14.").
 
-IMPORTANTE: le "Informazioni dal database" sono il risultato già calcolato della query, quindi contengono
-già la risposta esatta (anche se è un solo numero o valore con un nome di campo tecnico tipo
-"count(DISTINCT o)"). Riportalo esplicitamente nella risposta, senza dire che mancano dettagli se il
-valore è presente.
+Il tuo AMBITO comprende: Caravaggio, Caracciolo, le loro opere, e i musei/luoghi di Napoli (e le loro
+informazioni: nomi, indirizzi, città, ecc.). Le domande sui musei di Napoli sono SEMPRE nel tuo ambito.
 
-Se invece le "Informazioni dal database" sono vuote E la domanda riguarda un argomento chiaramente al
-di fuori del tuo ambito (non su Caravaggio, Caracciolo, le loro opere, o i musei di Napoli che le
-ospitano), NON dire semplicemente che i dati non sono disponibili: dichiara esplicitamente che la
-domanda esce dal tuo ambito, es. "Questo esula dal mio ambito: rispondo solo a domande su Caravaggio,
-Caracciolo, le loro opere e i musei di Napoli che le espongono."
+IMPORTANTE: se le "Informazioni dal database" contengono dei dati (anche un solo numero, un elenco o un
+valore con un nome di campo tecnico tipo "count(DISTINCT o)"), quei dati SONO la risposta: riportali
+esplicitamente e in modo naturale. In questo caso NON dire MAI che la domanda esula dal tuo ambito e non
+dire che mancano dettagli.
+
+Usa il messaggio di "fuori ambito" SOLO ed ESCLUSIVAMENTE se le "Informazioni dal database" sono
+completamente vuote E la domanda riguarda un soggetto chiaramente estraneo (un altro artista non trattato
+come Botticelli o Michelangelo, o un tema non artistico come la Torre Eiffel). In quel caso rispondi:
+"Questo esula dal mio ambito: rispondo solo a domande su Caravaggio, Caracciolo, le loro opere e i musei
+di Napoli che le espongono."
 
 Informazioni dal database:
 {context}
@@ -46,6 +38,7 @@ QA_PROMPT = PromptTemplate(
     input_variables=["context", "question"], template=QA_PROMPT_TEMPLATE
 )
 
+# Prompt che genera la query Cypher a partire dalla domanda e dallo schema del grafo.
 CYPHER_GENERATION_TEMPLATE = """Task: Genera una query Cypher da utilizzare sul database.
 Istruzioni:
 Usa solo le relazioni e proprietà presenti nello schema.
@@ -75,43 +68,5 @@ Question: {question}
 Cypher Query:"""
 
 CYPHER_PROMPT = PromptTemplate(
-    input_variables=["schema", "question"],
-    template=CYPHER_GENERATION_TEMPLATE
+    input_variables=["schema", "question"], template=CYPHER_GENERATION_TEMPLATE
 )
-
-chain = GraphCypherQAChain.from_llm(
-    llm=llm_cypher,
-    graph=graph,
-    verbose=True,
-    allow_dangerous_requests=True,
-    qa_prompt=QA_PROMPT,
-    cypher_prompt=CYPHER_PROMPT,
-)
-
-
-def genera_risposta(domanda):
-    try:
-        risultato = chain.invoke({"query": domanda})
-        return risultato["result"]
-    except Exception as e:
-        print(f"Errore: {e}")
-        return "Si è verificato un errore."
-
-
-if __name__ == "__main__":
-    domande_test = [
-        # "Chi ha dipinto il 'Ritratto di papa Paolo V'?",
-        # "Dove posso trovare il 'Ritratto di papa Paolo V'?",
-        # "Quale opera di Caravaggio contiene papa Paolo V?",
-        # "Quali opere di Caravaggio posso vedere nella Galleria Borghese?",
-        "Quali opere di Caravaggio contengono della frutta?",
-        "Ci sono opere di Caravaggio e Caracciolo che rappresentano gli stessi soggetti?",
-        "Quali musei di Napoli contengono le opere di Caracciolo?",
-        "Quali sono le opere di Caravaggio presenti a Napoli?"
-    ]
-
-    for domanda in domande_test:
-        print(f"\n {domanda}")
-        risposta = genera_risposta(domanda)
-        print(f" {risposta}")
-        print("─" * 60)
