@@ -4,6 +4,9 @@ version = "0.1.0"
 requires-python = ">=3.14"
 dependencies = [
     "gtts>=2.5.4",
+    "langchain-core>=1.4.8",
+    "langchain-neo4j>=0.10.0",
+    "langchain-ollama>=1.1.0",
     "mlx-lm>=0.21.0",
     "numpy>=2.5.0",
     "sounddevice>=0.5.5",

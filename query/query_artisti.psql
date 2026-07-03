@@ -1,0 +1,33 @@
+PREFIX wd: <http://www.wikidata.org/entity/>
+PREFIX wdt: <http://www.wikidata.org/prop/direct/>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+
+SELECT ?artista ?nome (MIN(?nascita) AS ?dataNascita) ?luogoNascitaLabel
+       (GROUP_CONCAT(DISTINCT ?movimentoLabel; SEPARATOR=", ") AS ?movimenti)
+       (GROUP_CONCAT(DISTINCT ?operaNotevoleLabel; SEPARATOR=", ") AS ?opereNotevoli)
+WHERE {
+    VALUES ?artista { wd:Q42207 wd:Q2519261 }
+
+    ?artista rdfs:label ?nome .
+    FILTER(lang(?nome) = "it")
+
+    OPTIONAL { ?artista wdt:P569 ?nascita . }
+    OPTIONAL {
+        ?artista wdt:P19 ?luogoNascita .
+        ?luogoNascita rdfs:label ?luogoNascitaLabel .
+        FILTER(lang(?luogoNascitaLabel) = "it")
+    }
+    OPTIONAL {
+        { ?artista wdt:P135 ?movimento . }
+        UNION
+        { ?artista wdt:P136 ?movimento . }
+        ?movimento rdfs:label ?movimentoLabel .
+        FILTER(lang(?movimentoLabel) = "it")
+    }
+    OPTIONAL {
+        ?artista wdt:P800 ?operaNotevole .
+        ?operaNotevole rdfs:label ?operaNotevoleLabel .
+        FILTER(lang(?operaNotevoleLabel) = "it")
+    }
+}
+GROUP BY ?artista ?nome ?luogoNascitaLabel

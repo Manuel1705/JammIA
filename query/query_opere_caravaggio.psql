@@ -1,0 +1,60 @@
+PREFIX wd: <http://www.wikidata.org/entity/>
+PREFIX wdt: <http://www.wikidata.org/prop/direct/>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+PREFIX schema: <http://schema.org/>
+
+SELECT DISTINCT ?opera ?museo ?nome ?descrizione ?anno
+       ?altezza ?larghezza ?tecnica ?museoNome ?tipoLabel
+       (GROUP_CONCAT(DISTINCT ?depictsNome; SEPARATOR=", ") AS ?soggetti)
+WHERE {
+    ?opera wdt:P170 wd:Q42207 .
+
+    VALUES ?tipo {
+        wd:Q3305213   # dipinto
+        wd:Q15727816  # serie di dipinti
+        wd:Q18573970  # gruppo di dipinti
+        wd:Q93184     # disegno
+        wd:Q848330    # tondo
+    }
+    ?opera wdt:P31 ?tipo .
+
+    OPTIONAL { ?tipo rdfs:label ?tipoIT . FILTER(lang(?tipoIT) = "it") }
+    OPTIONAL { ?tipo rdfs:label ?tipoEN . FILTER(lang(?tipoEN) = "en") }
+    BIND(COALESCE(?tipoIT, ?tipoEN, "Dipinto") AS ?tipoLabel)
+
+    OPTIONAL { ?opera rdfs:label ?nomeIT . FILTER(lang(?nomeIT) = "it") }
+    OPTIONAL { ?opera rdfs:label ?nomeEN . FILTER(lang(?nomeEN) = "en") }
+    BIND(COALESCE(?nomeIT, ?nomeEN, "N/D") AS ?nome)
+
+    OPTIONAL {
+        ?opera schema:description ?descrizione .
+        FILTER(lang(?descrizione) = "it")
+    }
+    OPTIONAL { ?opera wdt:P571 ?anno . }
+    OPTIONAL { ?opera wdt:P2048 ?altezza . }
+    OPTIONAL { ?opera wdt:P2049 ?larghezza . }
+
+    OPTIONAL {
+        ?opera wdt:P186 ?mat .
+        ?mat rdfs:label ?tecnica .
+        FILTER(lang(?tecnica) = "it")
+    }
+
+    # Cerchiamo il luogo sia tramite P276 (luogo) che P195 (collezione)
+    OPTIONAL {
+        { ?opera wdt:P276 ?museo . }
+        UNION
+        { ?opera wdt:P195 ?museo . }
+
+        OPTIONAL { ?museo rdfs:label ?mIT . FILTER(lang(?mIT) = "it") }
+        OPTIONAL { ?museo rdfs:label ?mEN . FILTER(lang(?mEN) = "en") }
+        BIND(COALESCE(?mIT, ?mEN, "Museo Sconosciuto") AS ?museoNome)
+    }
+
+    OPTIONAL {
+        ?opera wdt:P180 ?depicts .
+        ?depicts rdfs:label ?depictsNome .
+        FILTER(lang(?depictsNome) = "it")
+    }
+}
+GROUP BY ?opera ?museo ?nome ?descrizione ?anno ?altezza ?larghezza ?tecnica ?museoNome ?tipoLabel

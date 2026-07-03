@@ -1,9 +1,10 @@
-#connessione neo4j db
+# connessione neo4j db
 from neo4j import GraphDatabase
 
-URI      = "neo4j://127.0.0.1:7687"
-USER     = "neo4j"
-PASSWORD = "CambioManuAle417"
+URI = "neo4j://127.0.0.1:7687"
+USER = "neo4j"
+PASSWORD = "password"
+
 
 class Neo4jLoader:
     def __init__(self):
@@ -37,6 +38,7 @@ class Neo4jLoader:
                         movimenti=artista["movimenti"],
                         opere_notevoli=artista["opere_notevoli"]
                         )
+
     # ── Inserimento Opera ─────────────────────────────────────
     def inserisci_opera(self, opera):
         with self.driver.session() as session:

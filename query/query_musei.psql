@@ -1,0 +1,49 @@
+PREFIX wd: <http://www.wikidata.org/entity/>
+PREFIX wdt: <http://www.wikidata.org/prop/direct/>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+PREFIX schema: <http://schema.org/>
+
+SELECT DISTINCT ?museo ?nomeMuseo
+       (SAMPLE(?descrizione) AS ?descrizione)
+       (SAMPLE(?indirizzo)   AS ?indirizzo)
+       (SAMPLE(?sito)        AS ?sito)
+       (SAMPLE(?telefono)    AS ?telefono)
+       (SAMPLE(?fondazione)  AS ?fondazione)
+       (SAMPLE(?coordinate)  AS ?coordinate)
+       (SAMPLE(?cittaPulita) AS ?citta) # ← Usiamo la città ripulita
+       (SAMPLE(?fee)         AS ?fee)
+WHERE {
+    {   ?opera wdt:P170 wd:Q42207 .
+        { ?opera wdt:P276 ?museo . } UNION { ?opera wdt:P195 ?museo . } }
+    UNION
+    {   ?opera wdt:P170 wd:Q2519261 .
+        { ?opera wdt:P276 ?museo . } UNION { ?opera wdt:P195 ?museo . } }
+
+    ?museo rdfs:label ?nomeMuseo .
+    FILTER(lang(?nomeMuseo) = "it")
+
+    OPTIONAL {
+        ?museo schema:description ?descrizione .
+        FILTER(lang(?descrizione) = "it")
+    }
+    OPTIONAL { ?museo wdt:P6375 ?indirizzoIT . FILTER(lang(?indirizzoIT) = "it") }
+    OPTIONAL { ?museo wdt:P6375 ?indirizzoEN . FILTER(lang(?indirizzoEN) = "en") }
+    OPTIONAL { ?museo wdt:P969  ?indirizzoIT2 . FILTER(lang(?indirizzoIT2) = "it") }
+    BIND(COALESCE(?indirizzoIT, ?indirizzoIT2, ?indirizzoEN, "") AS ?indirizzo)
+
+    OPTIONAL { ?museo wdt:P856 ?sito .      }
+    OPTIONAL { ?museo wdt:P1329 ?telefono . }
+    OPTIONAL { ?museo wdt:P571 ?fondazione .}
+    OPTIONAL { ?museo wdt:P625 ?coordinate .}
+    OPTIONAL { ?museo wdt:P2555 ?fee .      }
+
+    OPTIONAL {
+        # P131 (unità amministrativa) o P276 (luogo)
+        { ?museo wdt:P131 ?citta . } UNION { ?museo wdt:P276 ?citta . }
+
+        OPTIONAL { ?citta rdfs:label ?cittaIT . FILTER(lang(?cittaIT) = "it") }
+        OPTIONAL { ?citta rdfs:label ?cittaEN . FILTER(lang(?cittaEN) = "en") }
+        BIND(COALESCE(?cittaIT, ?cittaEN) AS ?cittaPulita)
+    }
+}
+GROUP BY ?museo ?nomeMuseo

@@ -1,0 +1,49 @@
+PREFIX wd: <http://www.wikidata.org/entity/>
+PREFIX wdt: <http://www.wikidata.org/prop/direct/>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+PREFIX schema: <http://schema.org/>
+
+SELECT DISTINCT ?opera ?museo ?nome ?descrizione ?anno
+       ?altezza ?larghezza ?tecnica ?museoNome ?tipoLabel
+       (GROUP_CONCAT(DISTINCT ?depictsNome; SEPARATOR=", ") AS ?soggetti)
+WHERE {
+    ?opera wdt:P170 wd:Q2519261 .
+
+    # Includi dipinti, disegni e cicli di dipinti
+    VALUES ?tipo {
+        wd:Q3305213   # dipinto
+        wd:Q93184     # disegno
+        wd:Q1278452   # ciclo di dipinti
+    }
+    ?opera wdt:P31 ?tipo .
+    ?tipo rdfs:label ?tipoLabel .
+    FILTER(lang(?tipoLabel) = "it")
+
+    OPTIONAL { ?opera rdfs:label ?nomeIT . FILTER(lang(?nomeIT) = "it") }
+    OPTIONAL { ?opera rdfs:label ?nomeEN . FILTER(lang(?nomeEN) = "en") }
+    BIND(COALESCE(?nomeIT, ?nomeEN, "N/D") AS ?nome)
+
+    OPTIONAL {
+        ?opera schema:description ?descrizione .
+        FILTER(lang(?descrizione) = "it")
+    }
+    OPTIONAL { ?opera wdt:P571 ?anno . }
+    OPTIONAL { ?opera wdt:P2048 ?altezza . }
+    OPTIONAL { ?opera wdt:P2049 ?larghezza . }
+    OPTIONAL {
+        ?opera wdt:P186 ?mat .
+        ?mat rdfs:label ?tecnica .
+        FILTER(lang(?tecnica) = "it")
+    }
+    OPTIONAL {
+        ?opera wdt:P276 ?museo .
+        ?museo rdfs:label ?museoNome .
+        FILTER(lang(?museoNome) = "it")
+    }
+    OPTIONAL {
+        ?opera wdt:P180 ?depicts .
+        ?depicts rdfs:label ?depictsNome .
+        FILTER(lang(?depictsNome) = "it")
+    }
+}
+GROUP BY ?opera ?museo ?nome ?descrizione ?anno ?altezza ?larghezza ?tecnica ?museoNome ?tipoLabel
