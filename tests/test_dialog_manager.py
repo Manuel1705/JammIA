@@ -21,16 +21,28 @@ def _dm_solo_analisi(output_llm):
 # ── _analizza_domanda: parsing dei tre formati ────────────────
 
 def test_analizza_query_semplice():
-    dm = _dm_solo_analisi("QUERY\nQuante opere di Caravaggio a Napoli?")
+    dm = _dm_solo_analisi("QUERY\nIN: Quante opere di Caravaggio a Napoli?")
     r = dm._analizza_domanda("Quante opere di Caravaggio a Napoli?", {"cronologia": []})
-    assert r == {"tipo": "query", "sotto_domande": ["Quante opere di Caravaggio a Napoli?"]}
+    assert r == {"tipo": "query",
+                 "sotto_domande": [{"testo": "Quante opere di Caravaggio a Napoli?", "in_ambito": True}]}
 
 
-def test_analizza_query_composta():
-    dm = _dm_solo_analisi("QUERY\nDomanda uno?\nDomanda due?")
+def test_analizza_query_composta_con_ambito():
+    # una parte in ambito (Caravaggio) e una fuori (Botticelli)
+    dm = _dm_solo_analisi("QUERY\nIN: Opere di Caravaggio a Napoli?\nFUORI: Opere di Botticelli?")
     r = dm._analizza_domanda("...", {"cronologia": []})
     assert r["tipo"] == "query"
-    assert r["sotto_domande"] == ["Domanda uno?", "Domanda due?"]
+    assert r["sotto_domande"] == [
+        {"testo": "Opere di Caravaggio a Napoli?", "in_ambito": True},
+        {"testo": "Opere di Botticelli?", "in_ambito": False},
+    ]
+
+
+def test_analizza_query_etichetta_mancante_default_in_ambito():
+    # se il modello omette l'etichetta, la sotto-domanda è considerata in ambito per prudenza
+    dm = _dm_solo_analisi("QUERY\nQuante opere di Caravaggio a Napoli?")
+    r = dm._analizza_domanda("...", {"cronologia": []})
+    assert r["sotto_domande"] == [{"testo": "Quante opere di Caravaggio a Napoli?", "in_ambito": True}]
 
 
 def test_analizza_chiarimento():
@@ -46,11 +58,11 @@ def test_analizza_diretta():
 
 
 def test_analizza_fallback_senza_riga_query():
-    # se il modello dimentica la riga "QUERY", le righe restano comunque sotto-domande
+    # se il modello dimentica la riga "QUERY", le righe restano comunque sotto-domande (in ambito)
     dm = _dm_solo_analisi("Quante opere di Caravaggio a Napoli?")
     r = dm._analizza_domanda("Quante opere di Caravaggio a Napoli?", {"cronologia": []})
     assert r["tipo"] == "query"
-    assert r["sotto_domande"] == ["Quante opere di Caravaggio a Napoli?"]
+    assert r["sotto_domande"] == [{"testo": "Quante opere di Caravaggio a Napoli?", "in_ambito": True}]
 
 
 # ── _invoca_chain_con_retry: recupero e fallback ──────────────
@@ -82,21 +94,37 @@ def test_retry_fallback_dopo_esaurimento():
 def test_risolvi_riferimenti_azzera_risposta_su_query():
     # una nuova QUERY deve azzerare la `risposta` del turno precedente, altrimenti il conditional
     # edge salterebbe genera_risposta e ripeterebbe la risposta vecchia (echo)
-    dm = _dm_solo_analisi("QUERY\nQuante opere di Caravaggio?")
+    dm = _dm_solo_analisi("QUERY\nIN: Quante opere di Caravaggio?")
     out = dm._risolvi_riferimenti({"domanda": "Quante opere di Caravaggio?", "cronologia": []})
     assert out["risposta"] is None
-    assert out["sotto_domande"] == ["Quante opere di Caravaggio?"]
+    assert out["sotto_domande"] == [{"testo": "Quante opere di Caravaggio?", "in_ambito": True}]
 
 
 def test_genera_risposta_unisce_le_sottodomande():
     dm = DialogManager.__new__(DialogManager)
+    dm._chain = SimpleNamespace(invoke=lambda p: {"result": "Due opere di Caravaggio."})
+    state = {"sotto_domande": [{"testo": "Opere di Caravaggio a Napoli?", "in_ambito": True}]}
+    out = dm._genera_risposta(state)
+    assert out["risposta"] == "Due opere di Caravaggio."
+
+
+def test_genera_risposta_fuori_ambito_non_interroga_la_chain():
+    # una sotto-domanda fuori ambito riceve il messaggio fisso senza chiamare la chain
+    from chatbot.dialog.manager import MESSAGGIO_FUORI_AMBITO
+
+    dm = DialogManager.__new__(DialogManager)
+    chiamate = {"n": 0}
 
     def chain(params):
-        q = params["query"]
-        return {"result": "Botticelli fuori ambito." if "Botticelli" in q else "Due opere di Caravaggio."}
+        chiamate["n"] += 1
+        return {"result": "opere di Caravaggio"}
 
     dm._chain = SimpleNamespace(invoke=chain)
-    state = {"sotto_domande": ["Opere di Caravaggio a Napoli?", "Opere di Botticelli?"]}
+    state = {"sotto_domande": [
+        {"testo": "Opere di Caravaggio a Napoli?", "in_ambito": True},
+        {"testo": "Opere di Botticelli?", "in_ambito": False},
+    ]}
     out = dm._genera_risposta(state)
-    assert "Due opere di Caravaggio." in out["risposta"]
-    assert "Botticelli fuori ambito." in out["risposta"]
+    assert "opere di Caravaggio" in out["risposta"]
+    assert MESSAGGIO_FUORI_AMBITO in out["risposta"]
+    assert chiamate["n"] == 1  # la chain è chiamata SOLO per la sotto-domanda in ambito

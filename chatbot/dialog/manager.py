@@ -18,11 +18,19 @@ from langgraph.types import Command, interrupt
 
 from chatbot import config
 
+# risposta standard per le sotto-domande fuori ambito (altri artisti o temi non pertinenti)
+MESSAGGIO_FUORI_AMBITO = (
+    "Questo esula dal mio ambito: rispondo solo a domande su Caravaggio, Caracciolo, "
+    "le loro opere e i musei di Napoli che le espongono."
+)
+
 
 class DialogState(TypedDict):
     domanda: str
     cronologia: List[dict]
-    sotto_domande: Optional[List[str]]
+    # ogni sotto-domanda è {"testo": str, "in_ambito": bool}: quelle fuori ambito ricevono
+    # una risposta fissa senza interrogare il grafo
+    sotto_domande: Optional[List[dict]]
     artista_corrente: Optional[str]
     opera_corrente: Optional[str]
     museo_corrente: Optional[str]
@@ -95,6 +103,9 @@ usando anche gli scambi precedenti come contesto:
    esplicito dell'entità preso dagli scambi precedenti (il titolo dell'opera, il nome dell'artista o del
    museo). Nella sotto-domanda riscritta NON devono più comparire dimostrativi o pronomi: chi la legge non
    deve aver bisogno della conversazione precedente per capirla.
+   Etichetta OGNI sotto-domanda con l'ambito: "IN:" se riguarda Caravaggio, Caracciolo (anche "Merisi" o
+   "Battistello"), le loro opere o i musei/luoghi di Napoli; "FUORI:" se riguarda un ALTRO artista (es.
+   Botticelli, Michelangelo, Raffaello) o un tema non pertinente.
 2. CHIARIMENTO — la richiesta richiederebbe una query, ma usa un riferimento implicito (es. "lui",
    "quell'opera") che né la richiesta né gli scambi precedenti chiariscono.
 3. DIRETTA — SOLO messaggi puramente sociali (saluti, ringraziamenti, commiati, small talk) che NON
@@ -107,24 +118,24 @@ Scambi precedenti (dal più vecchio al più recente):
 Richiesta dell'utente: {domanda}
 
 Rispondi SOLO in uno di questi formati esatti, senza altro testo:
-- se QUERY: la PRIMA riga è esattamente "QUERY", poi UNA domanda atomica per riga (senza numeri né trattini);
-  se la richiesta è già una singola domanda, metti quell'unica domanda sulla riga dopo "QUERY".
+- se QUERY: la PRIMA riga è esattamente "QUERY", poi UNA domanda atomica per riga, ciascuna preceduta
+  dall'etichetta di ambito "IN:" o "FUORI:" (senza numeri né trattini).
 - se CHIARIMENTO: "CHIARIMENTO: <unica domanda di chiarimento, breve e diretta>"
 - se DIRETTA: "DIRETTA: <risposta breve e cordiale in italiano>"
 
 Esempi:
 Richiesta: "Quanti quadri di Caravaggio sono a Napoli?"
 QUERY
-Quanti quadri di Caravaggio sono a Napoli?
+IN: Quanti quadri di Caravaggio sono a Napoli?
 
 Richiesta: "Elencami questi quadri." (dopo aver parlato dei quadri di Caravaggio a Napoli)
 QUERY
-Quali sono i titoli dei quadri di Caravaggio esposti a Napoli?
+IN: Quali sono i titoli dei quadri di Caravaggio esposti a Napoli?
 
 Richiesta: "Come si chiamano queste opere e quante ne ha fatte Botticelli?" (dopo aver parlato delle opere di Caravaggio a Napoli)
 QUERY
-Come si chiamano le opere di Caravaggio esposte a Napoli?
-Quante opere ha fatto Botticelli?
+IN: Come si chiamano le opere di Caravaggio esposte a Napoli?
+FUORI: Quante opere ha fatto Botticelli?
 
 Richiesta: "Chi l'ha dipinta?" (nessuna opera nominata prima)
 CHIARIMENTO: Di quale opera stai parlando?
@@ -144,9 +155,21 @@ DIRETTA: Prego, è stato un piacere!"""
             testo = prima.split(":", 1)[1].strip() if ":" in prima else prima[len("DIRETTA"):].strip()
             return {"tipo": "diretta", "testo": testo}
 
-        # QUERY: le sotto-domande sono le righe successive (ignorando l'eventuale riga "QUERY")
-        sotto_domande = [r.strip(" -*\t") for r in righe if r.strip().upper() != "QUERY"]
-        return {"tipo": "query", "sotto_domande": sotto_domande or [domanda]}
+        # QUERY: ogni riga (esclusa "QUERY") è una sotto-domanda con etichetta di ambito IN:/FUORI:.
+        # Se l'etichetta manca (il modello l'ha omessa), la si considera in ambito per prudenza.
+        sotto_domande = []
+        for r in righe:
+            testo = r.strip(" -*\t")
+            if testo.upper() == "QUERY":
+                continue
+            if testo.upper().startswith("FUORI"):
+                sotto_domande.append({"testo": testo.split(":", 1)[-1].strip(), "in_ambito": False})
+            elif testo.upper().startswith("IN:"):
+                sotto_domande.append({"testo": testo.split(":", 1)[1].strip(), "in_ambito": True})
+            else:
+                sotto_domande.append({"testo": testo, "in_ambito": True})
+
+        return {"tipo": "query", "sotto_domande": sotto_domande or [{"testo": domanda, "in_ambito": True}]}
 
     def _risolvi_riferimenti(self, state: DialogState) -> dict:
         domanda = state["domanda"]
@@ -159,9 +182,10 @@ DIRETTA: Prego, è stato un piacere!"""
             # mette in pausa il grafo: chi chiama deve chiedere il chiarimento all'utente
             # e poi far ripartire il grafo con rispondi_chiarimento()
             risposta_utente = interrupt(analisi["testo"])
-            # dopo il chiarimento trattiamo la domanda chiarita come un'unica sotto-domanda
+            # dopo il chiarimento trattiamo la domanda chiarita come un'unica sotto-domanda in ambito
             domanda_chiarita = f"{domanda} (chiarimento: {risposta_utente})"
-            return {"domanda": domanda_chiarita, "sotto_domande": [domanda_chiarita], "risposta": None}
+            sotto = [{"testo": domanda_chiarita, "in_ambito": True}]
+            return {"domanda": domanda_chiarita, "sotto_domande": sotto, "risposta": None}
 
         if analisi["tipo"] == "diretta":
             # nessuna query necessaria: la risposta è già pronta, si salta genera_risposta
@@ -173,9 +197,15 @@ DIRETTA: Prego, è stato un piacere!"""
         # le sotto-domande sono già auto-contenute (i riferimenti sono stati risolti in
         # _analizza_domanda), quindi NON passo la cronologia alla chain: darla in pasto qui farebbe
         # ricopiare al modello le risposte dei turni precedenti invece di usare il nuovo risultato
-        sotto_domande = state.get("sotto_domande") or [state["domanda"]]
+        sotto_domande = state.get("sotto_domande") or [{"testo": state["domanda"], "in_ambito": True}]
 
-        risposte = [self._invoca_chain_con_retry(sd, sd) for sd in sotto_domande]
+        risposte = []
+        for sd in sotto_domande:
+            if sd.get("in_ambito", True):
+                risposte.append(self._invoca_chain_con_retry(sd["testo"], sd["testo"]))
+            else:
+                # sotto-domanda fuori ambito (altro artista/tema): risposta fissa, niente query sul grafo
+                risposte.append(MESSAGGIO_FUORI_AMBITO)
 
         risposta_finale = " ".join(r for r in risposte if r) or "Si è verificato un errore."
         return {"risposta": risposta_finale}
