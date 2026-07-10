@@ -58,6 +58,16 @@ REGOLE TASSATIVE DI SINTASSI:
 3. Non inventare etichette o proprietà non presenti nello schema fornito e attieniti alle relazioni presenti nel database.
 4. Ogni valore aggregato (count, sum, avg, collect, ecc.) DEVE avere un alias leggibile con AS,
    es. "RETURN count(DISTINCT o) AS numero_opere" invece di "RETURN count(DISTINCT o)".
+5. Quando la domanda riguarda PIÙ entità (es. più opere) e chiede una loro proprietà o relazione
+   (in quale museo si trovano, chi le ha dipinte, ecc.), NON assumere che condividano lo stesso nodo
+   collegato e NON legarle tutte alla stessa variabile. Usa un solo pattern con una lista in WHERE ... IN
+   [...] e restituisci OGNI entità col suo valore. Esempio corretto per "in quale museo si trovano
+   l'opera A, l'opera B e l'opera C":
+     MATCH (o:Opera)-[:ESPOSTA_IN]-(m:Museo)
+     WHERE o.name IN ["A", "B", "C"]
+     RETURN o.name AS opera, m.name AS museo
+   Esempio ERRATO (assume un unico museo comune, spesso restituisce vuoto):
+     MATCH (o1:Opera {{name:"A"}})-[:ESPOSTA_IN]-(m) MATCH (o2:Opera {{name:"B"}})-[:ESPOSTA_IN]-(m) ...
 
 Esempio errato: (a:Artista)-[:ESPOSTA_IN]-(m:Museo) o (m:Museo)-[:ESPOSTA_IN]-(o:Città)
 

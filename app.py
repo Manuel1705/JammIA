@@ -1,15 +1,4 @@
-"""Entry point: interfaccia web (Gradio) del chatbot.
-
-Uso:  uv run app.py
-Permette di fare domande a voce (microfono) o scritte; mostra la conversazione e riproduce la
-risposta come audio nel browser.
-"""
 import uuid
-import warnings
-
-# warning innocuo interno a Gradio: usa una costante Starlette deprecata (HTTP_422_UNPROCESSABLE_ENTITY).
-# Non dipende dal nostro codice; lo silenziamo solo per pulire la console.
-warnings.filterwarnings("ignore", message=".*HTTP_422_UNPROCESSABLE_ENTITY.*")
 
 import gradio as gr
 
@@ -20,7 +9,6 @@ from chatbot.speech.transcriber import SpeechToText
 
 # ── Componenti condivisi (STT, TTS, RAG, gestione dialogo) ──
 stt = SpeechToText()
-tts = TextToSpeech()
 rag = RagChain()
 dialog_manager = DialogManager(rag.chain, rag.llm)
 
@@ -46,7 +34,7 @@ def _rispondi(domanda, cronologia, stato):
     etichetta = "❓ " + testo_bot if esito["tipo"] == "chiarimento" else testo_bot
     cronologia = cronologia + [{"role": "assistant", "content": etichetta}]
 
-    audio_risposta = tts.sintetizza(testo_bot)
+    audio_risposta = TextToSpeech.synthesize(testo_bot)
     return cronologia, audio_risposta, stato
 
 
@@ -54,7 +42,7 @@ def gestisci_audio(audio, cronologia, stato):
     """Trascrive la richiesta vocale e la inoltra alla logica di dialogo comune."""
     if audio is None:
         return cronologia, None, stato, gr.update(value=None)
-    domanda = stt.trascrivi_gradio(audio)
+    domanda = stt.trascrivi_audio(audio)
     cronologia, audio_risposta, stato = _rispondi(domanda, cronologia, stato)
     return cronologia, audio_risposta, stato, gr.update(value=None)
 
@@ -112,7 +100,6 @@ with gr.Blocks(title="Guida Caravaggio & Caracciolo") as demo:
         inputs=None,
         outputs=[chatbot, audio_out, stato, audio_in, testo_in],
     )
-
 
 if __name__ == "__main__":
     demo.launch()

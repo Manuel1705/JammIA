@@ -8,6 +8,8 @@ SQLite finiscono sempre nella stessa posizione, indipendentemente da dove viene 
 import os
 from pathlib import Path
 
+import torch
+
 # Radice del repository = cartella che contiene il package `chatbot`
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -37,6 +39,8 @@ WIKI_HEADERS = {"User-Agent": "CaravaggioBot/1.0 (progetto universitario NLP)"}
 
 # ── Speech (riconoscimento e sintesi vocale) ──────────────────
 WHISPER_MODEL = "openai/whisper-large-v3"
-SAMPLE_RATE = 16000  # frequenza attesa da Whisper
 TTS_LANG = "it"
-TTS_VELOCITA = 1.3  # velocità di riproduzione della risposta (afplay -r)
+
+DEVICE = "cuda" if torch.cuda.is_available() \
+    else "mps" if torch.backends.mps.is_available() \
+    else "cpu"

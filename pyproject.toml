@@ -12,7 +12,6 @@ dependencies = [
     "langgraph-checkpoint-sqlite>=3.1.0",
     "mlx-lm>=0.21.0",
     "numpy>=2.5.0",
-    "sounddevice>=0.5.5",
     "sparqlwrapper>=2.0.0",
     "torch>=2.12.1",
     "torchaudio>=2.11.0",
