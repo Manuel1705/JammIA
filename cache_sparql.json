@@ -1,5 +1,5 @@
 {
-  "artisti": [
+  "artists": [
     {
       "artista": {
         "type": "uri",
@@ -59,7 +59,7 @@
       }
     }
   ],
-  "opere_caravaggio": [
+  "works_caravaggio": [
     {
       "opera": {
         "type": "uri",
@@ -18332,7 +18332,7 @@
       }
     }
   ],
-  "opere_caracciolo": [
+  "works_caracciolo": [
     {
       "opera": {
         "type": "uri",
@@ -22551,7 +22551,7 @@
       }
     }
   ],
-  "musei": [
+  "museums": [
     {
       "museo": {
         "type": "uri",

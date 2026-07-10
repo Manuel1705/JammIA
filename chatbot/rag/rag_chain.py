@@ -7,19 +7,20 @@ from chatbot.rag.prompts import CYPHER_PROMPT, QA_PROMPT
 
 
 class RagChain:
-    """
-    Catena RAG (Retrieval-Augmented Generation) su grafo Neo4j.
-    Incapsula il collegamento a Neo4j, il modello LLM (Ollama) e la GraphCypherQAChain di LangChain,che: (1) genera una query Cypher dalla domanda, (2) la esegue sul grafo, (3) trasforma il risultato in una risposta in linguaggio naturale.
-    Costruisce ed espone la GraphCypherQAChain e il modello LLM sottostante.
+    """RAG (Retrieval-Augmented Generation) chain over the Neo4j graph.
 
-    Espone due attributi usati dal DialogManager:
-    - `chain`: la GraphCypherQAChain (`.invoke({"query": ...}) -> {"result": ...}`)
-    - `llm`:   il modello LLM, riutilizzato anche per la classificazione delle domande
+    Wraps the Neo4j connection, the LLM (Ollama) and LangChain's GraphCypherQAChain, which:
+    (1) generates a Cypher query from the question, (2) runs it on the graph, (3) turns the result
+    into a natural-language answer.
+
+    Exposes two attributes used by the DialogManager:
+    - `chain`: the GraphCypherQAChain (`.invoke({"query": ...}) -> {"result": ...}`)
+    - `llm`:   the LLM, reused also for classifying the questions
     """
 
     def __init__(self):
         self.graph = Neo4jGraph(config.NEO4J_URI, config.NEO4J_USER, config.NEO4J_PASSWORD)
-        self.llm = ChatOllama(model=config.MODELLO_LLM, temperature=config.LLM_TEMPERATURE)
+        self.llm = ChatOllama(model=config.LLM_MODEL, temperature=config.LLM_TEMPERATURE)
         self.chain = GraphCypherQAChain.from_llm(
             llm=self.llm,
             graph=self.graph,

@@ -1,8 +1,8 @@
-"""Esecuzione delle query SPARQL su Wikidata, con cache locale dei risultati.
+"""Execution of SPARQL queries on Wikidata, with a local cache of the results.
 
-Le quattro query (`.psql`) vivono nella cartella `query/`; qui vengono caricate, eseguite
-sull'endpoint di Wikidata con gestione del rate-limit, e i risultati grezzi salvati in cache
-per non dover reinterrogare Wikidata (lento e soggetto a throttling) a ogni avvio.
+The four queries (`.psql`) live in the `query/` folder; here they are loaded, executed against the
+Wikidata endpoint with rate-limit handling, and the raw results are cached so Wikidata (slow and
+subject to throttling) does not need to be queried again at every startup.
 """
 import json
 import time
@@ -13,95 +13,95 @@ from SPARQLWrapper import SPARQLWrapper, JSON
 from chatbot import config
 
 
-def carica_query(nome_file: str) -> str:
-    """Legge il testo di una query SPARQL dalla cartella query/."""
-    with open(config.QUERY_DIR / nome_file, "r", encoding="utf-8") as f:
+def load_query(filename: str) -> str:
+    """Read the text of a SPARQL query from the query/ folder."""
+    with open(config.QUERY_DIR / filename, "r", encoding="utf-8") as f:
         return f.read()
 
 
 class SparqlExecutor:
-    """Carica le query SPARQL, le esegue su Wikidata e mette in cache i risultati."""
+    """Loads the SPARQL queries, runs them against Wikidata and caches the results."""
 
     class Query(NamedTuple):
-        """Testo SPARQL delle quattro query del progetto."""
-        artisti: str
-        opere_caravaggio: str
-        opere_caracciolo: str
-        musei: str
+        """SPARQL text of the project's four queries."""
+        artists: str
+        works_caravaggio: str
+        works_caracciolo: str
+        museums: str
 
-    class Risultati(NamedTuple):
-        """Binding grezzi restituiti da Wikidata per ciascuna query."""
-        artisti: list
-        opere_caravaggio: list
-        opere_caracciolo: list
-        musei: list
+    class Results(NamedTuple):
+        """Raw bindings returned by Wikidata for each query."""
+        artists: list
+        works_caravaggio: list
+        works_caracciolo: list
+        museums: list
 
     def __init__(self, max_retry: int = 5):
         self.query = self.Query(
-            artisti=carica_query("query_artisti.psql"),
-            opere_caravaggio=carica_query("query_opere_caravaggio.psql"),
-            opere_caracciolo=carica_query("query_opere_caracciolo.psql"),
-            musei=carica_query("query_musei.psql"),
+            artists=load_query("query_artisti.psql"),
+            works_caravaggio=load_query("query_opere_caravaggio.psql"),
+            works_caracciolo=load_query("query_opere_caracciolo.psql"),
+            museums=load_query("query_musei.psql"),
         )
         self.max_retry = max_retry
 
-    def _esegui(self, query_sparql: str) -> list:
+    def _execute(self, sparql_query: str) -> list:
         sparql = SPARQLWrapper(config.SPARQL_ENDPOINT)
         sparql.addCustomHttpHeader("User-Agent", config.USER_AGENT)
         sparql.setTimeout(60)
-        sparql.setQuery(query_sparql)
+        sparql.setQuery(sparql_query)
         sparql.setReturnFormat(JSON)
 
         for _ in range(self.max_retry):
             try:
-                time.sleep(5)  # attesa fissa tra le query per non sovraccaricare Wikidata
+                time.sleep(5)  # fixed wait between queries to avoid overloading Wikidata
                 return sparql.query().convert()["results"]["bindings"]
             except Exception as e:
-                # su rate-limit (HTTP 429) attende e riprova; su ogni altro errore si arrende
+                # on rate-limit (HTTP 429) wait and retry; on any other error give up
                 if "429" in str(e):
-                    print("   ⚠️  Rate limit! Attendo 5 secondi...")
+                    print("   ⚠️  Rate limit! Waiting 5 seconds...")
                     time.sleep(5)
                 else:
-                    print(f" Errore: {e}")
+                    print(f" Error: {e}")
                     return []
         return []
 
-    def artisti(self) -> list:
-        return self._esegui(self.query.artisti)
+    def artists(self) -> list:
+        return self._execute(self.query.artists)
 
-    def opere_caravaggio(self) -> list:
-        return self._esegui(self.query.opere_caravaggio)
+    def works_caravaggio(self) -> list:
+        return self._execute(self.query.works_caravaggio)
 
-    def opere_caracciolo(self) -> list:
-        return self._esegui(self.query.opere_caracciolo)
+    def works_caracciolo(self) -> list:
+        return self._execute(self.query.works_caracciolo)
 
-    def musei(self) -> list:
-        return self._esegui(self.query.musei)
+    def museums(self) -> list:
+        return self._execute(self.query.museums)
 
-    def _salva_cache(self, risultati: "SparqlExecutor.Risultati") -> None:
+    def _save_cache(self, results: "SparqlExecutor.Results") -> None:
         with open(config.CACHE_SPARQL, "w", encoding="utf-8") as f:
-            json.dump(risultati._asdict(), f, ensure_ascii=False, indent=2)
-        print(" Cache salvata!")
+            json.dump(results._asdict(), f, ensure_ascii=False, indent=2)
+        print(" Cache saved!")
 
-    def _carica_cache(self) -> Optional["SparqlExecutor.Risultati"]:
+    def _load_cache(self) -> Optional["SparqlExecutor.Results"]:
         if config.CACHE_SPARQL.exists():
             with open(config.CACHE_SPARQL, "r", encoding="utf-8") as f:
-                print(" Cache trovata, carico dati locali...")
-                return self.Risultati(**json.load(f))
+                print(" Cache found, loading local data...")
+                return self.Results(**json.load(f))
         return None
 
-    def esegui_tutte(self) -> "SparqlExecutor.Risultati":
-        """Ritorna i risultati delle quattro query, dalla cache se presente, altrimenti
-        interrogando Wikidata e salvando la cache per le esecuzioni successive."""
-        cache = self._carica_cache()
+    def execute_all(self) -> "SparqlExecutor.Results":
+        """Return the results of the four queries, from cache if present, otherwise by querying
+        Wikidata and saving the cache for subsequent runs."""
+        cache = self._load_cache()
         if cache:
             return cache
 
-        risultati = self.Risultati(
-            artisti=self.artisti(),
-            opere_caravaggio=self.opere_caravaggio(),
-            opere_caracciolo=self.opere_caracciolo(),
-            musei=self.musei(),
+        results = self.Results(
+            artists=self.artists(),
+            works_caravaggio=self.works_caravaggio(),
+            works_caracciolo=self.works_caracciolo(),
+            museums=self.museums(),
         )
-        self._salva_cache(risultati)
-        return risultati
+        self._save_cache(results)
+        return results

@@ -1,7 +1,11 @@
-"""Template dei prompt usati dalla catena RAG (generazione Cypher e risposta in linguaggio naturale)."""
+"""Prompt templates used by the RAG chain (Cypher generation and natural-language answer).
+
+The template strings themselves are intentionally kept in Italian: they are the prompts sent to the
+LLM, which must reason and answer in Italian.
+"""
 from langchain_core.prompts import PromptTemplate
 
-# Prompt che trasforma il risultato della query in una risposta discorsiva per l'utente.
+# Prompt that turns the query result into a discursive answer for the user.
 QA_PROMPT_TEMPLATE = """Sei una guida esperta di opere artistiche, in particolare di Caravaggio e Caracciolo.
 L'utente ti chiederà domande sulle opere, sui musei o sugli artisti presenti nel database.
 
@@ -38,7 +42,7 @@ QA_PROMPT = PromptTemplate(
     input_variables=["context", "question"], template=QA_PROMPT_TEMPLATE
 )
 
-# Prompt che genera la query Cypher a partire dalla domanda e dallo schema del grafo.
+# Prompt that generates the Cypher query from the question and the graph schema.
 CYPHER_GENERATION_TEMPLATE = """Task: Genera una query Cypher da utilizzare sul database.
 Istruzioni:
 Usa solo le relazioni e proprietà presenti nello schema.

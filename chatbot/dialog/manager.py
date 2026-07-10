@@ -1,14 +1,17 @@
-"""Gestione dello stato del dialogo tramite un grafo LangGraph.
+"""Dialogue state management via a LangGraph graph.
 
-Il DialogManager fa da orchestratore tra l'utente e la catena RAG. Per ogni turno:
-1. `_analizza_domanda` — UNA chiamata LLM che classifica la richiesta (QUERY / CHIARIMENTO / DIRETTA)
-   e, se è una QUERY, la scompone già nelle sotto-domande atomiche auto-contenute.
-2. se serve un CHIARIMENTO, il grafo si mette in pausa con `interrupt()` e chi lo chiama deve
-   raccogliere la risposta dell'utente e riprendere con `rispondi_chiarimento()`.
-3. `_genera_risposta` — interroga la catena RAG per ogni sotto-domanda e unisce le risposte.
+The DialogManager orchestrates between the user and the RAG chain. For each turn:
+1. `_analyze_question` — ONE LLM call that classifies the request (QUERY / CLARIFICATION / DIRECT)
+   and, if it is a QUERY, already splits it into atomic, self-contained sub-questions.
+2. if a CLARIFICATION is needed, the graph pauses with `interrupt()` and the caller must collect the
+   user's answer and resume with `answer_clarification()`.
+3. `_generate_answer` — queries the RAG chain for each sub-question and joins the answers.
 
-Lo stato è persistito su SQLite (checkpointer), così sopravvive ai riavvii; ogni conversazione è
-identificata da un `thread_id`.
+State is persisted on SQLite (checkpointer), so it survives restarts; each conversation is identified
+by a `thread_id`.
+
+Note: the LLM prompt and the user-facing messages are intentionally kept in Italian; the parser also
+matches the Italian tags (QUERY / CHIARIMENTO / DIRETTA / IN: / FUORI:) produced by that prompt.
 """
 from typing import List, Optional, TypedDict
 
@@ -18,76 +21,76 @@ from langgraph.types import Command, interrupt
 
 from chatbot import config
 
-# risposta standard per le sotto-domande fuori ambito (altri artisti o temi non pertinenti)
-MESSAGGIO_FUORI_AMBITO = (
+# standard answer for out-of-scope sub-questions (other artists or unrelated topics)
+OUT_OF_SCOPE_MESSAGE = (
     "Questo esula dal mio ambito: rispondo solo a domande su Caravaggio, Caracciolo, "
     "le loro opere e i musei di Napoli che le espongono."
 )
 
 
 class DialogState(TypedDict):
-    domanda: str
-    cronologia: List[dict]
-    # ogni sotto-domanda è {"testo": str, "in_ambito": bool}: quelle fuori ambito ricevono
-    # una risposta fissa senza interrogare il grafo
-    sotto_domande: Optional[List[dict]]
-    artista_corrente: Optional[str]
-    opera_corrente: Optional[str]
-    museo_corrente: Optional[str]
-    risposta: Optional[str]
+    question: str
+    history: List[dict]
+    # each sub-question is {"text": str, "in_scope": bool}: out-of-scope ones get a fixed
+    # answer without querying the graph
+    sub_questions: Optional[List[dict]]
+    current_artist: Optional[str]
+    current_work: Optional[str]
+    current_museum: Optional[str]
+    answer: Optional[str]
 
 
 class DialogManager:
-    def __init__(self, chain, llm_riferimenti, db_file=None):
+    def __init__(self, chain, llm, db_file=None):
         """
-        chain: la GraphCypherQAChain (`.invoke({"query": ...}) -> {"result": ...}`) usata per rispondere.
-        llm_riferimenti: chat model (`.invoke(str) -> oggetto con .content`) usato per classificare
-                         e scomporre la domanda.
-        db_file: percorso del checkpoint SQLite (default: config.DIALOG_DB).
+        chain: the GraphCypherQAChain (`.invoke({"query": ...}) -> {"result": ...}`) used to answer.
+        llm: chat model (`.invoke(str) -> object with .content`) used to classify and split the question.
+        db_file: path of the SQLite checkpoint (default: config.DIALOG_DB).
         """
         self._chain = chain
-        self._llm_riferimenti = llm_riferimenti
+        self._llm = llm
         self._checkpointer_cm = SqliteSaver.from_conn_string(str(db_file or config.DIALOG_DB))
         self._checkpointer = self._checkpointer_cm.__enter__()
-        self._graph = self._costruisci_grafo()
+        self._graph = self._build_graph()
 
-    def _costruisci_grafo(self):
+    def _build_graph(self):
         g = StateGraph(DialogState)
-        g.add_node("risolvi_riferimenti", self._risolvi_riferimenti)
-        g.add_node("genera_risposta", self._genera_risposta)
-        g.add_node("aggiorna_stato", self._aggiorna_stato)
+        g.add_node("resolve_references", self._resolve_references)
+        g.add_node("generate_answer", self._generate_answer)
+        g.add_node("update_state", self._update_state)
 
-        g.add_edge(START, "risolvi_riferimenti")
-        # se risolvi_riferimenti ha già prodotto una risposta diretta (nessuna query necessaria),
-        # si salta genera_risposta e si va dritti ad aggiornare la cronologia
+        g.add_edge(START, "resolve_references")
+        # if resolve_references already produced a direct answer (no query needed),
+        # skip generate_answer and go straight to updating the history
         g.add_conditional_edges(
-            "risolvi_riferimenti",
-            lambda state: "aggiorna_stato" if state.get("risposta") else "genera_risposta",
-            {"genera_risposta": "genera_risposta", "aggiorna_stato": "aggiorna_stato"},
+            "resolve_references",
+            lambda state: "update_state" if state.get("answer") else "generate_answer",
+            {"generate_answer": "generate_answer", "update_state": "update_state"},
         )
-        g.add_edge("genera_risposta", "aggiorna_stato")
-        g.add_edge("aggiorna_stato", END)
+        g.add_edge("generate_answer", "update_state")
+        g.add_edge("update_state", END)
 
         return g.compile(checkpointer=self._checkpointer)
 
     @staticmethod
-    def _cronologia_recente(stato: DialogState, n: int = 3) -> str:
-        """Formatta gli ultimi n scambi domanda/risposta, per dare al modello il contesto
-        necessario a risolvere riferimenti impliciti (es. "questi quadri", "quell'opera")."""
-        cronologia = stato.get("cronologia", [])[-n:]
-        if not cronologia:
+    def _recent_history(state: DialogState, n: int = 3) -> str:
+        """Format the last n question/answer exchanges, to give the model the context needed to
+        resolve implicit references (e.g. "these paintings", "that work"). The labels stay Italian
+        because this text is fed into the Italian LLM prompt."""
+        history = state.get("history", [])[-n:]
+        if not history:
             return "nessuno"
         return "\n".join(
-            f"- Domanda: {turno['domanda']}\n  Risposta: {turno['risposta']}"
-            for turno in cronologia
+            f"- Domanda: {turn['question']}\n  Risposta: {turn['answer']}"
+            for turn in history
         )
 
-    def _analizza_domanda(self, domanda: str, stato: DialogState) -> dict:
-        """In UNA sola chiamata LLM classifica la domanda e, se è una QUERY, la scompone già nelle
-        sotto-domande atomiche. Ritorna uno di:
-        - {"tipo": "query", "sotto_domande": [...]}
-        - {"tipo": "chiarimento", "testo": ...}
-        - {"tipo": "diretta", "testo": ...}"""
+    def _analyze_question(self, question: str, state: DialogState) -> dict:
+        """In a SINGLE LLM call, classify the question and, if it is a QUERY, already split it into
+        atomic sub-questions. Returns one of:
+        - {"type": "query", "sub_questions": [...]}
+        - {"type": "clarification", "text": ...}
+        - {"type": "direct", "text": ...}"""
         prompt = f"""Sei l'instradatore di un chatbot su Caravaggio, Caracciolo, le loro opere e i musei di
 Napoli che le ospitano. Analizza la richiesta dell'utente e classificala in una di queste tre categorie,
 usando anche gli scambi precedenti come contesto:
@@ -113,9 +116,9 @@ usando anche gli scambi precedenti come contesto:
    opere/artisti/musei, NON è mai DIRETTA: è QUERY.
 
 Scambi precedenti (dal più vecchio al più recente):
-{self._cronologia_recente(stato)}
+{self._recent_history(state)}
 
-Richiesta dell'utente: {domanda}
+Richiesta dell'utente: {question}
 
 Rispondi SOLO in uno di questi formati esatti, senza altro testo:
 - se QUERY: la PRIMA riga è esattamente "QUERY", poi UNA domanda atomica per riga, ciascuna preceduta
@@ -143,114 +146,114 @@ CHIARIMENTO: Di quale opera stai parlando?
 Richiesta: "Grazie mille!"
 DIRETTA: Prego, è stato un piacere!"""
 
-        risposta = self._llm_riferimenti.invoke(prompt).content.strip()
-        righe = [r.strip() for r in risposta.splitlines() if r.strip()]
-        prima = righe[0] if righe else ""
-        maiuscolo = prima.upper()
+        response = self._llm.invoke(prompt).content.strip()
+        lines = [r.strip() for r in response.splitlines() if r.strip()]
+        first = lines[0] if lines else ""
+        upper = first.upper()
 
-        if maiuscolo.startswith("CHIARIMENTO"):
-            testo = prima.split(":", 1)[1].strip() if ":" in prima else prima[len("CHIARIMENTO"):].strip()
-            return {"tipo": "chiarimento", "testo": testo}
-        if maiuscolo.startswith("DIRETTA"):
-            testo = prima.split(":", 1)[1].strip() if ":" in prima else prima[len("DIRETTA"):].strip()
-            return {"tipo": "diretta", "testo": testo}
+        if upper.startswith("CHIARIMENTO"):
+            text = first.split(":", 1)[1].strip() if ":" in first else first[len("CHIARIMENTO"):].strip()
+            return {"type": "clarification", "text": text}
+        if upper.startswith("DIRETTA"):
+            text = first.split(":", 1)[1].strip() if ":" in first else first[len("DIRETTA"):].strip()
+            return {"type": "direct", "text": text}
 
-        # QUERY: ogni riga (esclusa "QUERY") è una sotto-domanda con etichetta di ambito IN:/FUORI:.
-        # Se l'etichetta manca (il modello l'ha omessa), la si considera in ambito per prudenza.
-        sotto_domande = []
-        for r in righe:
-            testo = r.strip(" -*\t")
-            if testo.upper() == "QUERY":
+        # QUERY: every line (except "QUERY") is a sub-question with an IN:/FUORI: scope tag.
+        # If the tag is missing (the model omitted it), it is treated as in-scope for safety.
+        sub_questions = []
+        for r in lines:
+            text = r.strip(" -*\t")
+            if text.upper() == "QUERY":
                 continue
-            if testo.upper().startswith("FUORI"):
-                sotto_domande.append({"testo": testo.split(":", 1)[-1].strip(), "in_ambito": False})
-            elif testo.upper().startswith("IN:"):
-                sotto_domande.append({"testo": testo.split(":", 1)[1].strip(), "in_ambito": True})
+            if text.upper().startswith("FUORI"):
+                sub_questions.append({"text": text.split(":", 1)[-1].strip(), "in_scope": False})
+            elif text.upper().startswith("IN:"):
+                sub_questions.append({"text": text.split(":", 1)[1].strip(), "in_scope": True})
             else:
-                sotto_domande.append({"testo": testo, "in_ambito": True})
+                sub_questions.append({"text": text, "in_scope": True})
 
-        return {"tipo": "query", "sotto_domande": sotto_domande or [{"testo": domanda, "in_ambito": True}]}
+        return {"type": "query", "sub_questions": sub_questions or [{"text": question, "in_scope": True}]}
 
-    def _risolvi_riferimenti(self, state: DialogState) -> dict:
-        domanda = state["domanda"]
-        analisi = self._analizza_domanda(domanda, state)
+    def _resolve_references(self, state: DialogState) -> dict:
+        question = state["question"]
+        analysis = self._analyze_question(question, state)
 
-        # NB: azzero SEMPRE la risposta del turno precedente. Restando persistita nel checkpoint
-        # SQLite, se non ripulita il conditional edge la scambierebbe per una risposta diretta di
-        # QUESTO turno, saltando genera_risposta e ripetendo la risposta vecchia (echo tra i turni).
-        if analisi["tipo"] == "chiarimento":
-            # mette in pausa il grafo: chi chiama deve chiedere il chiarimento all'utente
-            # e poi far ripartire il grafo con rispondi_chiarimento()
-            risposta_utente = interrupt(analisi["testo"])
-            # dopo il chiarimento trattiamo la domanda chiarita come un'unica sotto-domanda in ambito
-            domanda_chiarita = f"{domanda} (chiarimento: {risposta_utente})"
-            sotto = [{"testo": domanda_chiarita, "in_ambito": True}]
-            return {"domanda": domanda_chiarita, "sotto_domande": sotto, "risposta": None}
+        # NB: ALWAYS reset the previous turn's answer. Since it stays persisted in the SQLite
+        # checkpoint, if not cleared the conditional edge would mistake it for a direct answer of
+        # THIS turn, skipping generate_answer and repeating the old answer (echo across turns).
+        if analysis["type"] == "clarification":
+            # pause the graph: the caller must ask the user for the clarification
+            # and then resume the graph with answer_clarification()
+            user_answer = interrupt(analysis["text"])
+            # after the clarification, treat the clarified question as a single in-scope sub-question
+            clarified_question = f"{question} (chiarimento: {user_answer})"
+            subs = [{"text": clarified_question, "in_scope": True}]
+            return {"question": clarified_question, "sub_questions": subs, "answer": None}
 
-        if analisi["tipo"] == "diretta":
-            # nessuna query necessaria: la risposta è già pronta, si salta genera_risposta
-            return {"domanda": domanda, "risposta": analisi["testo"]}
+        if analysis["type"] == "direct":
+            # no query needed: the answer is already ready, generate_answer is skipped
+            return {"question": question, "answer": analysis["text"]}
 
-        return {"domanda": domanda, "sotto_domande": analisi["sotto_domande"], "risposta": None}
+        return {"question": question, "sub_questions": analysis["sub_questions"], "answer": None}
 
-    def _genera_risposta(self, state: DialogState) -> dict:
-        # le sotto-domande sono già auto-contenute (i riferimenti sono stati risolti in
-        # _analizza_domanda), quindi NON passo la cronologia alla chain: darla in pasto qui farebbe
-        # ricopiare al modello le risposte dei turni precedenti invece di usare il nuovo risultato
-        sotto_domande = state.get("sotto_domande") or [{"testo": state["domanda"], "in_ambito": True}]
+    def _generate_answer(self, state: DialogState) -> dict:
+        # sub-questions are already self-contained (references were resolved in _analyze_question),
+        # so the history is NOT passed to the chain: feeding it here would make the model copy the
+        # previous turns' answers instead of using the new result
+        sub_questions = state.get("sub_questions") or [{"text": state["question"], "in_scope": True}]
 
-        risposte = []
-        for sd in sotto_domande:
-            if sd.get("in_ambito", True):
-                risposte.append(self._invoca_chain_con_retry(sd["testo"], sd["testo"]))
+        answers = []
+        for sq in sub_questions:
+            if sq.get("in_scope", True):
+                answers.append(self._invoke_chain_with_retry(sq["text"], sq["text"]))
             else:
-                # sotto-domanda fuori ambito (altro artista/tema): risposta fissa, niente query sul grafo
-                risposte.append(MESSAGGIO_FUORI_AMBITO)
+                # out-of-scope sub-question (other artist/topic): fixed answer, no graph query
+                answers.append(OUT_OF_SCOPE_MESSAGE)
 
-        risposta_finale = " ".join(r for r in risposte if r) or "Si è verificato un errore."
-        return {"risposta": risposta_finale}
+        final_answer = " ".join(a for a in answers if a) or "Si è verificato un errore."
+        return {"answer": final_answer}
 
-    def _invoca_chain_con_retry(self, sotto_domanda: str, domanda_con_contesto: str, max_retry: int = 3) -> str:
-        """Interroga la chain riprovando se la generazione della query Cypher fallisce (i modelli
-        piccoli producono a volte Cypher sintatticamente errato; essendo la generazione stocastica,
-        un nuovo tentativo spesso produce una query valida). Se tutti i tentativi falliscono, ritorna
-        un messaggio di fallback per quella sotto-domanda invece di scartarla in silenzio."""
-        for tentativo in range(max_retry):
+    def _invoke_chain_with_retry(self, sub_question: str, question_with_context: str, max_retry: int = 3) -> str:
+        """Query the chain, retrying if the Cypher generation fails (small models sometimes produce
+        syntactically invalid Cypher; since generation is stochastic, a new attempt often produces a
+        valid query). If all attempts fail, return a fallback message for that sub-question instead of
+        dropping it silently."""
+        for attempt in range(max_retry):
             try:
-                risultato = self._chain.invoke({"query": domanda_con_contesto})
-                return risultato["result"].strip()
+                result = self._chain.invoke({"query": question_with_context})
+                return result["result"].strip()
             except Exception as e:
-                print(f"[DialogManager] tentativo {tentativo + 1}/{max_retry} fallito "
-                      f"su sotto-domanda {sotto_domanda!r}: {e}")
-        return f"Non sono riuscito a recuperare le informazioni per: «{sotto_domanda}»."
+                print(f"[DialogManager] attempt {attempt + 1}/{max_retry} failed "
+                      f"on sub-question {sub_question!r}: {e}")
+        return f"Non sono riuscito a recuperare le informazioni per: «{sub_question}»."
 
     @staticmethod
-    def _aggiorna_stato(state: DialogState) -> dict:
-        cronologia = state.get("cronologia", []) + [
-            {"domanda": state["domanda"], "risposta": state["risposta"]}
+    def _update_state(state: DialogState) -> dict:
+        history = state.get("history", []) + [
+            {"question": state["question"], "answer": state["answer"]}
         ]
-        return {"cronologia": cronologia}
+        return {"history": history}
 
-    def invoke(self, domanda: str, thread_id: str = "default") -> dict:
-        """Avvia un nuovo turno di conversazione.
-        Ritorna {"tipo": "risposta", "testo": ...} se il turno è completo,
-        oppure {"tipo": "chiarimento", "testo": ...} se serve chiedere qualcosa all'utente."""
-        config_grafo = {"configurable": {"thread_id": thread_id}}
-        risultato = self._graph.invoke({"domanda": domanda}, config=config_grafo)
-        return self._interpreta_risultato(risultato)
+    def invoke(self, question: str, thread_id: str = "default") -> dict:
+        """Start a new conversation turn.
+        Returns {"type": "answer", "text": ...} if the turn is complete,
+        or {"type": "clarification", "text": ...} if something must be asked to the user."""
+        graph_config = {"configurable": {"thread_id": thread_id}}
+        result = self._graph.invoke({"question": question}, config=graph_config)
+        return self._interpret_result(result)
 
-    def rispondi_chiarimento(self, risposta_utente: str, thread_id: str = "default") -> dict:
-        """Riprende un turno rimasto in pausa in attesa di un chiarimento dall'utente."""
-        config_grafo = {"configurable": {"thread_id": thread_id}}
-        risultato = self._graph.invoke(Command(resume=risposta_utente), config=config_grafo)
-        return self._interpreta_risultato(risultato)
+    def answer_clarification(self, user_answer: str, thread_id: str = "default") -> dict:
+        """Resume a turn that was paused waiting for a clarification from the user."""
+        graph_config = {"configurable": {"thread_id": thread_id}}
+        result = self._graph.invoke(Command(resume=user_answer), config=graph_config)
+        return self._interpret_result(result)
 
     @staticmethod
-    def _interpreta_risultato(risultato: dict) -> dict:
-        if "__interrupt__" in risultato:
-            testo_chiarimento = risultato["__interrupt__"][0].value
-            return {"tipo": "chiarimento", "testo": testo_chiarimento}
-        return {"tipo": "risposta", "testo": risultato["risposta"]}
+    def _interpret_result(result: dict) -> dict:
+        if "__interrupt__" in result:
+            clarification_text = result["__interrupt__"][0].value
+            return {"type": "clarification", "text": clarification_text}
+        return {"type": "answer", "text": result["answer"]}
 
     def close(self):
         self._checkpointer_cm.__exit__(None, None, None)

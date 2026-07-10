@@ -1,7 +1,11 @@
-"""Scrittura di artisti, opere e musei nel database a grafo Neo4j.
+"""Writing of artists, works and museums into the Neo4j graph database.
 
-Il grafo modella tre tipi di nodo (Artista, Opera, Museo, più Città) collegati dalle relazioni
-DIPINTA_DA (Opera→Artista), ESPOSTA_IN (Opera→Museo) e SITUATO_IN (Museo→Città).
+The graph models three node types (Artista, Opera, Museo, plus Città) connected by the relationships
+DIPINTA_DA (Opera→Artista), ESPOSTA_IN (Opera→Museo) and SITUATO_IN (Museo→Città).
+
+Note: the Cypher node labels, relationships and property names are kept in Italian because they are
+the graph schema referenced by the (Italian) Cypher-generation prompt and by the already-populated
+database; only the Python-side identifiers and query parameter names are in English.
 """
 from neo4j import GraphDatabase
 
@@ -17,101 +21,101 @@ class Neo4jLoader:
     def close(self):
         self.driver.close()
 
-    def svuota_database(self):
-        """Cancella tutto il grafo prima di reinserire i dati."""
+    def clear_database(self):
+        """Delete the whole graph before reinserting the data."""
         with self.driver.session() as session:
             session.run("MATCH (n) DETACH DELETE n")
-        print("Database svuotato")
+        print("Database cleared")
 
-    def inserisci_artista(self, artista: dict):
+    def insert_artist(self, artist: dict):
         with self.driver.session() as session:
             session.run("""
                 MERGE (a:Artista {wikidataId: $wikidata_id})
                 ON CREATE SET
-                    a.name          = $nome,
-                    a.data_nascita  = $data_nascita,
-                    a.luogo_nascita = $luogo_nascita,
-                    a.movimenti     = $movimenti,
-                    a.opere_notevoli = $opere_notevoli
+                    a.name          = $name,
+                    a.data_nascita  = $birth_date,
+                    a.luogo_nascita = $birth_place,
+                    a.movimenti     = $movements,
+                    a.opere_notevoli = $notable_works
             """,
-                        wikidata_id=artista["wikidata_id"],
-                        nome=artista["nome"],
-                        data_nascita=artista["data_nascita"],
-                        luogo_nascita=artista["luogo_nascita"],
-                        movimenti=artista["movimenti"],
-                        opere_notevoli=artista["opere_notevoli"],
+                        wikidata_id=artist["wikidata_id"],
+                        name=artist["name"],
+                        birth_date=artist["birth_date"],
+                        birth_place=artist["birth_place"],
+                        movements=artist["movements"],
+                        notable_works=artist["notable_works"],
                         )
 
-    def inserisci_opera(self, opera: dict):
-        # collega l'opera all'artista (sempre) e al museo (solo se presente, via FOREACH condizionale)
+    def insert_work(self, work: dict):
+        # link the work to the artist (always) and to the museum (only if present, via a conditional FOREACH)
         with self.driver.session() as session:
             session.run("""
                 MERGE (o:Opera {wikidataId: $wikidata_id})
                 ON CREATE SET
-                    o.name      = $titolo,
-                    o.anno        = $anno,
-                    o.altezza     = $altezza,
-                    o.larghezza   = $larghezza,
-                    o.tecnica     = $tecnica,
-                    o.soggetti    = $soggetti,
-                    o.descrizione = $descrizione,
-                    o.tipo        = $tipo
+                    o.name      = $title,
+                    o.anno        = $year,
+                    o.altezza     = $height,
+                    o.larghezza   = $width,
+                    o.tecnica     = $technique,
+                    o.soggetti    = $subjects,
+                    o.descrizione = $description,
+                    o.tipo        = $type
 
                 WITH o
 
-                MATCH (a:Artista {wikidataId: $artista_id})
+                MATCH (a:Artista {wikidataId: $artist_id})
                 MERGE (o)-[:DIPINTA_DA]->(a)
 
                 WITH o
 
-                FOREACH (_ IN CASE WHEN $museo_id <> '' THEN [1] ELSE [] END |
-                    MERGE (m:Museo {wikidataId: $museo_id})
+                FOREACH (_ IN CASE WHEN $museum_id <> '' THEN [1] ELSE [] END |
+                    MERGE (m:Museo {wikidataId: $museum_id})
                     MERGE (o)-[:ESPOSTA_IN]->(m)
                 )
             """,
-                        wikidata_id=opera["wikidata_id"],
-                        titolo=opera["titolo"],
-                        anno=opera["anno"],
-                        altezza=opera["altezza"],
-                        larghezza=opera["larghezza"],
-                        tecnica=opera["tecnica"],
-                        soggetti=opera["soggetti"],
-                        descrizione=opera["descrizione"],
-                        tipo=opera["tipo"],
-                        artista_id=opera["artista_id"],
-                        museo_id=opera["museo_id"],
+                        wikidata_id=work["wikidata_id"],
+                        title=work["title"],
+                        year=work["year"],
+                        height=work["height"],
+                        width=work["width"],
+                        technique=work["technique"],
+                        subjects=work["subjects"],
+                        description=work["description"],
+                        type=work["type"],
+                        artist_id=work["artist_id"],
+                        museum_id=work["museum_id"],
                         )
 
-    def inserisci_museo(self, museo: dict):
+    def insert_museum(self, museum: dict):
         with self.driver.session() as session:
             session.run("""
                 MERGE (m:Museo {wikidataId: $wikidata_id})
                 ON CREATE SET
-                    m.name        = $nome,
-                    m.descrizione = $descrizione,
-                    m.indirizzo   = $indirizzo,
-                    m.sito        = $sito,
-                    m.telefono    = $telefono,
-                    m.fondazione  = $fondazione,
-                    m.latitudine  = $latitudine,
-                    m.longitudine = $longitudine,
-                    m.biglietto   = $biglietto
+                    m.name        = $name,
+                    m.descrizione = $description,
+                    m.indirizzo   = $address,
+                    m.sito        = $website,
+                    m.telefono    = $phone,
+                    m.fondazione  = $founded,
+                    m.latitudine  = $latitude,
+                    m.longitudine = $longitude,
+                    m.biglietto   = $ticket
 
                 WITH m
-                FOREACH (_ IN CASE WHEN $citta <> '' THEN [1] ELSE [] END |
-                    MERGE (c:Città {name: $citta})
+                FOREACH (_ IN CASE WHEN $city <> '' THEN [1] ELSE [] END |
+                    MERGE (c:Città {name: $city})
                     MERGE (m)-[:SITUATO_IN]->(c)
                 )
             """,
-                        wikidata_id=museo["wikidata_id"],
-                        nome=museo["nome"],
-                        descrizione=museo["descrizione"],
-                        indirizzo=museo["indirizzo"],
-                        sito=museo["sito"],
-                        telefono=museo["telefono"],
-                        fondazione=museo["fondazione"],
-                        latitudine=museo["latitudine"],
-                        longitudine=museo["longitudine"],
-                        citta=museo["citta"],
-                        biglietto=museo["biglietto"],
+                        wikidata_id=museum["wikidata_id"],
+                        name=museum["name"],
+                        description=museum["description"],
+                        address=museum["address"],
+                        website=museum["website"],
+                        phone=museum["phone"],
+                        founded=museum["founded"],
+                        latitude=museum["latitude"],
+                        longitude=museum["longitude"],
+                        city=museum["city"],
+                        ticket=museum["ticket"],
                         )

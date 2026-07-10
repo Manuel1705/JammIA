@@ -1,3 +1,4 @@
+"""Speech recognition (speech-to-text) via Whisper. Shared by the web interface."""
 import numpy as np
 from transformers import pipeline
 
@@ -12,11 +13,12 @@ class SpeechToText:
             device=config.DEVICE,
         )
 
-    def trascrivi_audio(self, audio) -> str:
+    def transcribe_audio(self, audio) -> str:
+        """Transcribe the (sample_rate, ndarray) format returned by Gradio's microphone."""
         sample_rate, audio = audio
-        dati = np.asarray(audio).astype(np.float32)  # cast to [float32] for whisper
-        risultato = self._pipeline(
-            {"raw": dati, "sampling_rate": sample_rate},
+        data = np.asarray(audio).astype(np.float32)  # cast to float32 for Whisper
+        result = self._pipeline(
+            {"raw": data, "sampling_rate": sample_rate},
             generate_kwargs={"language": "italian"},
         )
-        return risultato["text"].strip()
+        return result["text"].strip()

@@ -1,8 +1,11 @@
-"""Trasformazione dei binding SPARQL in dizionari pronti per Neo4j.
+"""Transformation of the SPARQL bindings into dictionaries ready for Neo4j.
 
-Oltre a normalizzare i campi (URI -> QID, date ISO -> anno, coordinate WKT -> lat/lon), arricchisce
-le opere con le descrizioni introduttive di Wikipedia (che su Wikidata spesso mancano), tenendo in
-cache le risposte per non reinterrogare Wikipedia a ogni esecuzione.
+Besides normalizing the fields (URI -> QID, ISO dates -> year, WKT coordinates -> lat/lon), it
+enriches the works with the introductory descriptions from Wikipedia (often missing on Wikidata),
+caching the responses so Wikipedia is not queried again at every run.
+
+Note: the second argument of `_value` (e.g. "artista", "nomeMuseo") is the SPARQL variable name
+defined in the `.psql` queries, so it is kept in Italian; only the output dictionary keys are English.
 """
 import json
 import time
@@ -13,168 +16,168 @@ from chatbot import config
 
 
 class Extractor:
-    # movimenti artistici di fallback, usati se Wikidata non li restituisce per un dato artista
-    MOVIMENTI_DEFAULT = {
+    # fallback art movements, used when Wikidata does not return them for a given artist
+    DEFAULT_MOVEMENTS = {
         "Q42207": "Barocco, Controriforma",
         "Q2519261": "Caravaggismo, Barocco napoletano",
     }
 
     def __init__(self):
-        self._cache_wikipedia = self._carica_cache()
+        self._wikipedia_cache = self._load_cache()
 
-    def _carica_cache(self) -> dict:
+    def _load_cache(self) -> dict:
         if config.CACHE_WIKIPEDIA.exists():
             with open(config.CACHE_WIKIPEDIA, "r", encoding="utf-8") as f:
-                print(" Cache Wikipedia trovata, carico dati locali...")
+                print(" Wikipedia cache found, loading local data...")
                 return json.load(f)
         return {}
 
-    def _salva_cache(self) -> None:
+    def _save_cache(self) -> None:
         with open(config.CACHE_WIKIPEDIA, "w", encoding="utf-8") as f:
-            json.dump(self._cache_wikipedia, f, ensure_ascii=False, indent=2)
+            json.dump(self._wikipedia_cache, f, ensure_ascii=False, indent=2)
 
     @staticmethod
-    def _valore(binding: dict, chiave: str, default: str = "") -> str:
-        """Estrae il campo 'value' di una variabile SPARQL dal binding, con default se assente."""
-        return binding.get(chiave, {}).get("value", default)
+    def _value(binding: dict, key: str, default: str = "") -> str:
+        """Extract the 'value' field of a SPARQL variable from the binding, with a default if absent."""
+        return binding.get(key, {}).get("value", default)
 
-    def descrizioni_wikipedia(self, nomi: list, batch: int = 20, timeout: int = 20) -> dict:
-        """Ritorna {titolo: estratto introduttivo da Wikipedia IT}, usando la cache dove possibile.
-        Interroga solo i titoli non ancora in cache, a gruppi di `batch` (limite dell'API MediaWiki).
+    def wikipedia_descriptions(self, names: list, batch: int = 20, timeout: int = 20) -> dict:
+        """Return {title: intro extract from Wikipedia IT}, using the cache where possible.
+        Only queries the titles not yet in cache, in groups of `batch` (MediaWiki API limit).
         """
-        mancanti = [nome for nome in nomi if nome not in self._cache_wikipedia]
+        missing = [name for name in names if name not in self._wikipedia_cache]
 
-        if not mancanti:
-            print(" Descrizioni già in cache, nessuna chiamata a Wikipedia.")
-            return {nome: self._cache_wikipedia[nome] for nome in nomi}
+        if not missing:
+            print(" Descriptions already in cache, no call to Wikipedia.")
+            return {name: self._wikipedia_cache[name] for name in names}
 
-        for i in range(0, len(mancanti), batch):
-            gruppo = mancanti[i:i + batch]
+        for i in range(0, len(missing), batch):
+            group = missing[i:i + batch]
             params = {
                 "action": "query",
                 "format": "json",
                 "prop": "extracts",
-                "exintro": 1,       # solo l'introduzione
-                "explaintext": 1,   # testo semplice, no HTML
+                "exintro": 1,       # intro only
+                "explaintext": 1,   # plain text, no HTML
                 "exlimit": "max",
-                "redirects": 1,     # segui i redirect
-                "titles": "|".join(gruppo),
+                "redirects": 1,     # follow redirects
+                "titles": "|".join(group),
             }
             url = config.WIKI_API + "?" + urllib.parse.urlencode(params)
             req = urllib.request.Request(url, headers=config.WIKI_HEADERS)
 
-            time.sleep(1)  # throttling, per non incorrere nel rate limit di Wikipedia
+            time.sleep(1)  # throttling, to avoid Wikipedia's rate limit
             try:
                 with urllib.request.urlopen(req, timeout=timeout) as resp:
                     q = json.load(resp).get("query", {})
             except Exception as e:
-                # un solo tentativo per batch: i titoli falliti restano fuori dalla cache
-                # e verranno ritentati automaticamente alla prossima esecuzione
-                print(f"[Wikipedia] errore batch: {e}")
+                # a single attempt per batch: failed titles stay out of the cache
+                # and will be retried automatically on the next run
+                print(f"[Wikipedia] batch error: {e}")
                 continue
 
-            titolo2estratto = {
+            title2extract = {
                 p["title"]: p.get("extract", "")
                 for p in q.get("pages", {}).values()
             }
 
-            # l'API può normalizzare o redirigere i titoli richiesti: ricostruisco la mappa
-            # titolo-richiesto -> titolo-effettivo per ritrovare l'estratto giusto
-            rimappa = {}
+            # the API may normalize or redirect the requested titles: rebuild the map
+            # requested-title -> actual-title to find the right extract
+            remap = {}
             for m in q.get("normalized", []):
-                rimappa[m["from"]] = m["to"]
+                remap[m["from"]] = m["to"]
             for m in q.get("redirects", []):
-                rimappa[m["from"]] = m["to"]
+                remap[m["from"]] = m["to"]
 
-            for nome in gruppo:
-                finale = rimappa.get(nome, nome)
-                finale = rimappa.get(finale, finale)
-                self._cache_wikipedia[nome] = titolo2estratto.get(finale, "")
+            for name in group:
+                final = remap.get(name, name)
+                final = remap.get(final, final)
+                self._wikipedia_cache[name] = title2extract.get(final, "")
 
-            self._salva_cache()  # salvo subito: se un batch successivo fallisce, questo non si perde
+            self._save_cache()  # save immediately: if a later batch fails, this one is not lost
 
-        return {nome: self._cache_wikipedia.get(nome, "") for nome in nomi}
+        return {name: self._wikipedia_cache.get(name, "") for name in names}
 
-    def estrai_artisti(self, risultati: list) -> list:
-        artisti = []
-        for r in risultati:
-            qid = self._valore(r, "artista").split("/")[-1]
-            movimenti = self._valore(r, "movimenti") or self.MOVIMENTI_DEFAULT.get(qid, "")
+    def extract_artists(self, results: list) -> list:
+        artists = []
+        for r in results:
+            qid = self._value(r, "artista").split("/")[-1]
+            movements = self._value(r, "movimenti") or self.DEFAULT_MOVEMENTS.get(qid, "")
 
-            artisti.append({
+            artists.append({
                 "wikidata_id": qid,
-                "nome": self._valore(r, "nome", "N/D"),
-                "data_nascita": self._valore(r, "dataNascita")[:10],
-                "luogo_nascita": self._valore(r, "luogoNascitaLabel"),
-                "movimenti": movimenti,
-                "opere_notevoli": self._valore(r, "opereNotevoli"),
+                "name": self._value(r, "nome", "N/D"),
+                "birth_date": self._value(r, "dataNascita")[:10],
+                "birth_place": self._value(r, "luogoNascitaLabel"),
+                "movements": movements,
+                "notable_works": self._value(r, "opereNotevoli"),
             })
-        return artisti
+        return artists
 
-    def estrai_opere(self, risultati: list, artista_id: str) -> list:
-        opere = []
-        for r in risultati:
-            museo_uri = self._valore(r, "museo")
-            anno_raw = self._valore(r, "anno")
+    def extract_works(self, results: list, artist_id: str) -> list:
+        works = []
+        for r in results:
+            museum_uri = self._value(r, "museo")
+            year_raw = self._value(r, "anno")
 
-            opere.append({
-                "wikidata_id": self._valore(r, "opera").split("/")[-1],
-                "titolo": self._valore(r, "nome", "N/D"),
-                "anno": anno_raw[:4] if anno_raw else "",
-                "altezza": self._valore(r, "altezza"),
-                "larghezza": self._valore(r, "larghezza"),
-                "tecnica": self._valore(r, "tecnica"),
-                "soggetti": self._valore(r, "soggetti"),
-                "museo_nome": self._valore(r, "museoNome"),
-                "museo_id": museo_uri.split("/")[-1] if museo_uri else "",
-                "artista_id": artista_id,
-                "descrizione": self._valore(r, "descrizione"),
-                "tipo": self._valore(r, "tipoLabel"),
+            works.append({
+                "wikidata_id": self._value(r, "opera").split("/")[-1],
+                "title": self._value(r, "nome", "N/D"),
+                "year": year_raw[:4] if year_raw else "",
+                "height": self._value(r, "altezza"),
+                "width": self._value(r, "larghezza"),
+                "technique": self._value(r, "tecnica"),
+                "subjects": self._value(r, "soggetti"),
+                "museum_name": self._value(r, "museoNome"),
+                "museum_id": museum_uri.split("/")[-1] if museum_uri else "",
+                "artist_id": artist_id,
+                "description": self._value(r, "descrizione"),
+                "type": self._value(r, "tipoLabel"),
             })
 
-        titoli = [o["titolo"] for o in opere]
-        descrizioni_wiki = self.descrizioni_wikipedia(titoli)
-        for opera in opere:
-            # la descrizione Wikipedia, più discorsiva, ha priorità su quella SPARQL;
-            # se Wikipedia non la trova si mantiene quella già presa da Wikidata
-            estratto = descrizioni_wiki.get(opera["titolo"], "")
-            if estratto:
-                opera["descrizione"] = estratto
+        titles = [w["title"] for w in works]
+        wiki_descriptions = self.wikipedia_descriptions(titles)
+        for work in works:
+            # the Wikipedia description, more discursive, takes priority over the SPARQL one;
+            # if Wikipedia does not have it, the one already taken from Wikidata is kept
+            extract = wiki_descriptions.get(work["title"], "")
+            if extract:
+                work["description"] = extract
 
-        return opere
+        return works
 
-    def estrai_musei(self, risultati: list) -> list:
-        musei = []
-        for r in risultati:
-            latitudine, longitudine = self._estrai_coordinate(self._valore(r, "coordinate"))
+    def extract_museums(self, results: list) -> list:
+        museums = []
+        for r in results:
+            latitude, longitude = self._extract_coordinates(self._value(r, "coordinate"))
 
-            fondazione = self._valore(r, "fondazione")
-            if fondazione:
-                fondazione = fondazione[:4]  # data ISO completa → solo l'anno
+            founded = self._value(r, "fondazione")
+            if founded:
+                founded = founded[:4]  # full ISO date → year only
 
-            musei.append({
-                "wikidata_id": self._valore(r, "museo").split("/")[-1],
-                "nome": self._valore(r, "nomeMuseo", "N/D"),
-                "descrizione": self._valore(r, "descrizione"),
-                "indirizzo": self._valore(r, "indirizzo"),
-                "sito": self._valore(r, "sito"),
-                "telefono": self._valore(r, "telefono"),
-                "fondazione": fondazione,
-                "latitudine": latitudine,
-                "longitudine": longitudine,
-                "citta": self._valore(r, "citta"),
-                "biglietto": self._valore(r, "fee"),
+            museums.append({
+                "wikidata_id": self._value(r, "museo").split("/")[-1],
+                "name": self._value(r, "nomeMuseo", "N/D"),
+                "description": self._value(r, "descrizione"),
+                "address": self._value(r, "indirizzo"),
+                "website": self._value(r, "sito"),
+                "phone": self._value(r, "telefono"),
+                "founded": founded,
+                "latitude": latitude,
+                "longitude": longitude,
+                "city": self._value(r, "citta"),
+                "ticket": self._value(r, "fee"),
             })
-        return musei
+        return museums
 
     @staticmethod
-    def _estrai_coordinate(coordinate: str):
-        """Converte 'Point(lon lat)' (formato WKT di Wikidata) in (latitudine, longitudine).
-        Nel WKT l'ordine è lon-lat, quindi vengono restituiti invertiti."""
-        if not coordinate:
+    def _extract_coordinates(coordinates: str):
+        """Convert 'Point(lon lat)' (Wikidata WKT format) into (latitude, longitude).
+        In WKT the order is lon-lat, so they are returned swapped."""
+        if not coordinates:
             return "", ""
         try:
-            lon, lat = coordinate.replace("Point(", "").replace(")", "").split()
+            lon, lat = coordinates.replace("Point(", "").replace(")", "").split()
             return lat, lon
         except (ValueError, IndexError):
             return "", ""

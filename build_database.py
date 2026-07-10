@@ -1,9 +1,9 @@
-"""Entry point: costruisce/ripopola il database Neo4j a partire da Wikidata.
+"""Entry point: build/repopulate the Neo4j database from Wikidata.
 
-Uso:  uv run build_database.py
-Attenzione: svuota il grafo esistente prima di reinserire i dati.
+Usage:  uv run build_database.py
+Warning: clears the existing graph before reinserting the data.
 """
-from chatbot.ingestion.pipeline import popola_database
+from chatbot.ingestion.pipeline import populate_database
 
 if __name__ == "__main__":
-    popola_database()
+    populate_database()

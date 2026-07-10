@@ -1,29 +1,29 @@
-"""Configurazione centralizzata del progetto.
+"""Centralized project configuration.
 
-Tutte le costanti (credenziali, nomi dei modelli, endpoint, percorsi di file) vivono qui,
-così da non essere duplicate nei vari moduli. I percorsi sono calcolati a partire da BASE_DIR
-(la radice del repository) e non dalla working directory: in questo modo cache, query e database
-SQLite finiscono sempre nella stessa posizione, indipendentemente da dove viene lanciato lo script.
+All constants (credentials, model names, endpoints, file paths) live here, so they are not
+duplicated across modules. Paths are computed from BASE_DIR (the repository root) rather than the
+working directory: this way cache, queries and the SQLite database always end up in the same
+location, regardless of where the script is launched from.
 """
 import os
 from pathlib import Path
 
 import torch
 
-# Radice del repository = cartella che contiene il package `chatbot`
+# Repository root = the folder containing the `chatbot` package
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 # ── Neo4j ─────────────────────────────────────────────────────
-# Per un progetto reale queste credenziali andrebbero lette da variabili d'ambiente.
+# In a real project these credentials should be read from environment variables.
 NEO4J_URI = os.getenv("NEO4J_URI", "neo4j://127.0.0.1:7687")
 NEO4J_USER = os.getenv("NEO4J_USER", "neo4j")
 NEO4J_PASSWORD = os.getenv("NEO4J_PASSWORD", "password")
 
-# ── Modello LLM (Ollama) ──────────────────────────────────────
-MODELLO_LLM = os.getenv("MODELLO_LLM", "gemma4:e4b")
+# ── LLM model (Ollama) ────────────────────────────────────────
+LLM_MODEL = os.getenv("LLM_MODEL", "gemma4:e4b")
 LLM_TEMPERATURE = 0.1
 
-# ── Percorsi (relativi alla radice del repo) ──────────────────
+# ── Paths (relative to the repo root) ─────────────────────────
 QUERY_DIR = BASE_DIR / "query"
 CACHE_SPARQL = BASE_DIR / "cache_sparql.json"
 CACHE_WIKIPEDIA = BASE_DIR / "cache_wikipedia.json"
@@ -33,14 +33,15 @@ DIALOG_DB = BASE_DIR / "dialog_state.sqlite"
 SPARQL_ENDPOINT = "https://query.wikidata.org/sparql"
 USER_AGENT = "CaravaggioBot/1.0 (progetto universitario NLP; tuaemail@esempio.com)"
 
-# ── Wikipedia (descrizioni testuali) ──────────────────────────
+# ── Wikipedia (text descriptions) ─────────────────────────────
 WIKI_API = "https://it.wikipedia.org/w/api.php"
 WIKI_HEADERS = {"User-Agent": "CaravaggioBot/1.0 (progetto universitario NLP)"}
 
-# ── Speech (riconoscimento e sintesi vocale) ──────────────────
+# ── Speech (recognition and synthesis) ────────────────────────
 WHISPER_MODEL = "openai/whisper-large-v3"
 TTS_LANG = "it"
 
+# Pick the available accelerator: CUDA (Colab/NVIDIA), else MPS (Apple), else CPU
 DEVICE = "cuda" if torch.cuda.is_available() \
     else "mps" if torch.backends.mps.is_available() \
     else "cpu"

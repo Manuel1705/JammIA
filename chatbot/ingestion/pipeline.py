@@ -1,47 +1,47 @@
-"""Pipeline di popolamento del database: Wikidata → estrazione → Neo4j.
+"""Database population pipeline: Wikidata → extraction → Neo4j.
 
-Orchestra i tre componenti di ingestion: interroga Wikidata (con cache), normalizza e arricchisce
-i dati con Wikipedia, poi svuota e ripopola il grafo Neo4j.
+Orchestrates the three ingestion components: queries Wikidata (with cache), normalizes and enriches
+the data with Wikipedia, then clears and repopulates the Neo4j graph.
 """
 from chatbot.ingestion.extractor import Extractor
 from chatbot.ingestion.neo4j_loader import Neo4jLoader
 from chatbot.ingestion.sparql_executor import SparqlExecutor
 
-# QID Wikidata dei due artisti trattati
+# Wikidata QIDs of the two artists covered
 CARAVAGGIO_ID = "Q42207"
 CARACCIOLO_ID = "Q2519261"
 
 
-def popola_database():
-    """Esegue l'intera pipeline di ingestion e ripopola Neo4j da zero."""
+def populate_database():
+    """Run the whole ingestion pipeline and repopulate Neo4j from scratch."""
     executor = SparqlExecutor()
-    risultati = executor.esegui_tutte()
+    results = executor.execute_all()
 
-    print("\n📖 Estrazione dati...")
+    print("\n📖 Extracting data...")
     extractor = Extractor()
-    artisti = extractor.estrai_artisti(risultati.artisti)
-    opere_caravaggio = extractor.estrai_opere(risultati.opere_caravaggio, artista_id=CARAVAGGIO_ID)
-    opere_caracciolo = extractor.estrai_opere(risultati.opere_caracciolo, artista_id=CARACCIOLO_ID)
-    musei = extractor.estrai_musei(risultati.musei)
+    artists = extractor.extract_artists(results.artists)
+    works_caravaggio = extractor.extract_works(results.works_caravaggio, artist_id=CARAVAGGIO_ID)
+    works_caracciolo = extractor.extract_works(results.works_caracciolo, artist_id=CARACCIOLO_ID)
+    museums = extractor.extract_museums(results.museums)
 
     loader = Neo4jLoader()
-    loader.svuota_database()
+    loader.clear_database()
 
-    print("\n Inserisco artisti...")
-    for artista in artisti:
-        loader.inserisci_artista(artista)
+    print("\n Inserting artists...")
+    for artist in artists:
+        loader.insert_artist(artist)
 
-    print("Inserisco musei...")
-    for museo in musei:
-        loader.inserisci_museo(museo)
+    print("Inserting museums...")
+    for museum in museums:
+        loader.insert_museum(museum)
 
-    print("Inserisco opere Caravaggio...")
-    for opera in opere_caravaggio:
-        loader.inserisci_opera(opera)
+    print("Inserting Caravaggio works...")
+    for work in works_caravaggio:
+        loader.insert_work(work)
 
-    print("Inserisco opere Caracciolo...")
-    for opera in opere_caracciolo:
-        loader.inserisci_opera(opera)
+    print("Inserting Caracciolo works...")
+    for work in works_caracciolo:
+        loader.insert_work(work)
 
     loader.close()
-    print("\n Database Neo4j popolato con successo!")
+    print("\n Neo4j database populated successfully!")
