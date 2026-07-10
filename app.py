@@ -74,57 +74,60 @@ def new_conversation():
     return [], None, state, gr.update(value=None), gr.update(value="")
 
 
-with gr.Blocks(title="Guida Caravaggio & Caracciolo") as demo:
-    gr.Markdown(
-        "# 🎨 Guida alle opere di Caravaggio e Caracciolo\n"
-        "Fai la tua domanda **a voce** (microfono + Invia) oppure **scrivendola** nel campo di testo. "
-        "Le risposte riguardano le opere dei due artisti e i musei di Napoli che le espongono."
-    )
+def create_ui():
+    with gr.Blocks(title="Guida Caravaggio & Caracciolo") as demo:
+        gr.Markdown(
+            "# 🎨 Guida alle opere di Caravaggio e Caracciolo\n"
+            "Fai la tua domanda **a voce** (microfono + Invia) oppure **scrivendola** nel campo di testo. "
+            "Le risposte riguardano le opere dei due artisti e i musei di Napoli che le espongono."
+        )
 
-    state = gr.State({"thread_id": str(uuid.uuid4()), "awaiting_clarification": False})
+        state = gr.State({"thread_id": str(uuid.uuid4()), "awaiting_clarification": False})
 
-    chatbot = gr.Chatbot(height=420, label="Conversazione")
+        chatbot = gr.Chatbot(height=420, label="Conversazione")
 
-    text_in = gr.Textbox(
-        label="Oppure scrivi la domanda",
-        placeholder="Es. Quante opere di Caravaggio ci sono a Napoli?",
-        submit_btn="Invia",
-    )
+        text_in = gr.Textbox(
+            label="Oppure scrivi la domanda",
+            placeholder="Es. Quante opere di Caravaggio ci sono a Napoli?",
+            submit_btn="Invia",
+        )
 
-    audio_in = gr.Audio(sources=["microphone"], type="numpy", label="Domanda a voce")
+        audio_in = gr.Audio(sources=["microphone"], type="numpy", label="Domanda a voce")
 
-    with gr.Row():
-        send_btn = gr.Button("🎤 Invia audio", variant="primary")
-        reset_btn = gr.Button("Nuova conversazione")
+        with gr.Row():
+            send_btn = gr.Button("🎤 Invia audio", variant="primary")
+            reset_btn = gr.Button("Nuova conversazione")
 
-    audio_out = gr.Audio(label="Risposta", autoplay=True)
+        audio_out = gr.Audio(label="Risposta", autoplay=True)
 
-    # voice: transcribe + show the message (step 1), then generate the answer with the native
-    # loading animation (step 2)
-    send_btn.click(
-        add_user_audio,
-        inputs=[audio_in, chatbot],
-        outputs=[chatbot, audio_in],
-    ).then(
-        generate_bot_answer,
-        inputs=[chatbot, state],
-        outputs=[chatbot, audio_out, state],
-    )
-    # text: show the message (step 1), then generate the answer (step 2)
-    text_in.submit(
-        add_user_text,
-        inputs=[text_in, chatbot],
-        outputs=[chatbot, text_in],
-    ).then(
-        generate_bot_answer,
-        inputs=[chatbot, state],
-        outputs=[chatbot, audio_out, state],
-    )
-    reset_btn.click(
-        new_conversation,
-        inputs=None,
-        outputs=[chatbot, audio_out, state, audio_in, text_in],
-    )
+        # voice: transcribe + show the message (step 1), then generate the answer with the native
+        # loading animation (step 2)
+        send_btn.click(
+            add_user_audio,
+            inputs=[audio_in, chatbot],
+            outputs=[chatbot, audio_in],
+        ).then(
+            generate_bot_answer,
+            inputs=[chatbot, state],
+            outputs=[chatbot, audio_out, state],
+        )
+        # text: show the message (step 1), then generate the answer (step 2)
+        text_in.submit(
+            add_user_text,
+            inputs=[text_in, chatbot],
+            outputs=[chatbot, text_in],
+        ).then(
+            generate_bot_answer,
+            inputs=[chatbot, state],
+            outputs=[chatbot, audio_out, state],
+        )
+        reset_btn.click(
+            new_conversation,
+            inputs=None,
+            outputs=[chatbot, audio_out, state, audio_in, text_in],
+        )
+        return demo
+
 
 if __name__ == "__main__":
-    demo.launch(share=True)
+    create_ui().launch(share=True)
