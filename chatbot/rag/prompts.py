@@ -48,6 +48,8 @@ virgolette. Usa SEMPRE e SOLO l'artista effettivamente nominato nella domanda de
 - se la domanda nomina "Caravaggio" (o "Merisi"), il nodo da cercare è {{name: "Caravaggio"}} — MAI Caracciolo.
 - se la domanda nomina "Caracciolo" (o "Battistello"), il nodo da cercare è {{name: "Battistello Caracciolo"}} — MAI Caravaggio.
 Non sostituire mai un artista con l'altro: sono due persone diverse.
+- Se ti vengono richieste informazioni su un museo, cerca il museo che CONTENGA quel nome. AD ESEMPIO: se ti viene chiesto 
+del museo di Capodimonte, cerca "MATCH (m:Museo) WHERE m.name CONTAINS 'Capodimonte' RETURN m". Stesso concetto per gli altri musei.
 
 REGOLE TASSATIVE DI SINTASSI:
 1. NON inserire MAI le punte delle frecce (< o >) nelle relazioni. Genera query sempre BIDIREZIONALI.
