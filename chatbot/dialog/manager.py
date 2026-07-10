@@ -147,6 +147,12 @@ Richiesta: "Grazie mille!"
 DIRETTA: Prego, è stato un piacere!"""
 
         response = self._llm.invoke(prompt).content.strip()
+        # print the model's full raw output for this step (its "chain of thought" for the analysis:
+        # classification + decomposition, including any <think> reasoning the model emits)
+        print("\n" + "─" * 70)
+        print(f"🧠 [ANALYZE] question: {question!r}")
+        print(f"🧠 [ANALYZE] raw model output:\n{response}")
+        print("─" * 70)
         lines = [r.strip() for r in response.splitlines() if r.strip()]
         first = lines[0] if lines else ""
         upper = first.upper()
@@ -201,6 +207,12 @@ DIRETTA: Prego, è stato un piacere!"""
         # so the history is NOT passed to the chain: feeding it here would make the model copy the
         # previous turns' answers instead of using the new result
         sub_questions = state.get("sub_questions") or [{"text": state["question"], "in_scope": True}]
+
+        # show the decomposition (each sub-question and whether it is in/out of scope)
+        print("🧩 [SUB-QUESTIONS]")
+        for sq in sub_questions:
+            scope = "IN" if sq.get("in_scope", True) else "OUT"
+            print(f"   [{scope}] {sq['text']}")
 
         answers = []
         for sq in sub_questions:

@@ -6,7 +6,6 @@ from chatbot.rag.rag_chain import RagChain
 from chatbot.speech.synthesizer import TextToSpeech
 from chatbot.speech.transcriber import SpeechToText
 
-# ── Shared components (STT, RAG, dialogue management) ──
 stt = SpeechToText()
 rag = RagChain()
 dialog_manager = DialogManager(rag.chain, rag.llm)
@@ -128,4 +127,4 @@ with gr.Blocks(title="Guida Caravaggio & Caracciolo") as demo:
     )
 
 if __name__ == "__main__":
-    demo.launch()
+    demo.launch(share=True)
