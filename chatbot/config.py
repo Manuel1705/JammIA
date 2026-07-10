@@ -20,8 +20,8 @@ NEO4J_USER = os.getenv("NEO4J_USER", "neo4j")
 NEO4J_PASSWORD = os.getenv("NEO4J_PASSWORD", "password")
 
 # ── LLM model (Ollama) ────────────────────────────────────────
-LLM_MODEL = os.getenv("LLM_MODEL", "gemma4:e4b")
-LLM_TEMPERATURE = 0.1
+LLM_MODEL = os.getenv("LLM_MODEL", "gemma4:e4b-mlx" if torch.backends.mps.is_available() else "gemma:e4b")
+LLM_TEMPERATURE = 0.2
 
 # ── Paths (relative to the repo root) ─────────────────────────
 QUERY_DIR = BASE_DIR / "query"
