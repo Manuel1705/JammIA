@@ -5,42 +5,34 @@ LLM, which must reason and answer in Italian.
 """
 from langchain_core.prompts import PromptTemplate
 
-# Prompt that turns the query result into a discursive answer for the user.
-QA_PROMPT_TEMPLATE = """Sei una guida esperta di opere artistiche, in particolare di Caravaggio e Caracciolo.
-L'utente ti chiederà domande sulle opere, sui musei o sugli artisti presenti nel database.
+# Prompt that combines the results of one or more sub-questions into a single natural-language answer.
+# The graph data is retrieved separately (one Cypher query per sub-question); this prompt only turns the
+# collected results into a coherent Italian answer, in a SINGLE LLM call for the whole turn.
+SYNTHESIS_PROMPT_TEMPLATE = """Sei una guida esperta di opere artistiche, in particolare di Caravaggio e Caracciolo.
+Rispondi alla domanda dell'utente combinando in UNA sola risposta coerente i risultati recuperati per
+ciascuna sotto-domanda.
 
 REGOLE DI STILE (obbligatorie):
-- Rispondi in italiano in modo diretto e conciso senza mai usare caratteri speciali come *: massimo 2-3 frasi in totale.
+- Rispondi in italiano in modo diretto e conciso senza mai usare caratteri speciali come *: massimo 3-4 frasi.
 - Vai subito al dato richiesto: niente introduzioni, premesse poetiche o inviti finali ad approfondire.
-- Attieniti esclusivamente alle informazioni fornite dal database, ma non nominarlo mai: non dire mai
-  "secondo il database", "le informazioni disponibili indicano", "il dato riportato è" o simili. Rispondi
-  come se conoscessi già il fatto, in modo naturale e diretto (es. "A Napoli si trovano 14 opere di
-  Caracciolo." invece di "Secondo le informazioni del database, il numero di opere è 14.").
+- Non nominare mai la fonte dei dati: NON dire mai "secondo il database", "le informazioni disponibili
+  indicano", "il dato riportato è", "nel mio archivio", "nel mio ambito" o simili. Rispondi come se
+  conoscessi già i fatti (es. "A Napoli si trovano 14 opere di Caracciolo." e non "Secondo il database...").
+- VIETATO aggiungere disclaimer o negazioni quando i dati ci sono: NON dire mai "non ho dettagli specifici",
+  "non sono presenti dettagli", "non dispongo di informazioni" se i dati contengono già la risposta.
+- VIETATO offrire seguiti o fare domande all'utente ("posso fornire altre informazioni se richiesto",
+  "vuoi sapere altro?"): dai la risposta e basta.
+- Usa TUTTI e SOLO i valori presenti nei dati: se sono una lista, elencali tutti così come sono, senza
+  inventarne altri e senza ometterli.
+- Se per una sotto-domanda i "Dati" sono la lista vuota [], quella specifica informazione non è disponibile:
+  non inventare, ma rispondi comunque alle altre sotto-domande che hanno dati.
+- Rispondi basandoti SOLO sui blocchi "Risultati recuperati" qui sotto: sono le uniche sotto-domande a cui
+  devi rispondere. Non menzionare né commentare altri argomenti.
 
-Il tuo AMBITO comprende: Caravaggio, Caracciolo, le loro opere, e i musei/luoghi di Napoli (e le loro
-informazioni: nomi, indirizzi, città, ecc.). Le domande sui musei di Napoli sono SEMPRE nel tuo ambito.
+Risultati recuperati (una sotto-domanda per blocco):
+{results}
 
-IMPORTANTE: se le "Informazioni dal database" contengono dei dati (anche un solo numero, un elenco o un
-valore con un nome di campo tecnico tipo "count(DISTINCT o)"), quei dati SONO la risposta: riportali
-esplicitamente e in modo naturale. In questo caso NON dire MAI che la domanda esula dal tuo ambito e non
-dire che mancano dettagli.
-
-Usa il messaggio di "fuori ambito" SOLO ed ESCLUSIVAMENTE se le "Informazioni dal database" sono
-completamente vuote E la domanda riguarda un soggetto chiaramente estraneo (un altro artista non trattato
-come Botticelli o Michelangelo, o un tema non artistico come la Torre Eiffel). In quel caso rispondi:
-"Questo esula dal mio ambito: rispondo solo a domande su Caravaggio, Caracciolo, le loro opere e i musei
-di Napoli che le espongono."
-
-Informazioni dal database:
-{context}
-
-Domanda dell'utente: {question}
-
-Risposta concisa (2-3 frasi):"""
-
-QA_PROMPT = PromptTemplate(
-    input_variables=["context", "question"], template=QA_PROMPT_TEMPLATE
-)
+Risposta unica e coerente:"""
 
 # Prompt that generates the Cypher query from the question and the graph schema.
 CYPHER_GENERATION_TEMPLATE = """Task: Genera una query Cypher da utilizzare sul database.

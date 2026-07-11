@@ -3,9 +3,9 @@
 Orchestrates the three ingestion components: queries Wikidata (with cache), normalizes and enriches
 the data with Wikipedia, then clears and repopulates the Neo4j graph.
 """
-from chatbot.ingestion.extractor import Extractor
-from chatbot.ingestion.neo4j_loader import Neo4jLoader
-from chatbot.ingestion.sparql_executor import SparqlExecutor
+from chatbot.ingestion.Extractor import Extractor
+from chatbot.ingestion.Neo4jLoader import Neo4jLoader
+from chatbot.ingestion.SparqlExecutor import SparqlExecutor
 
 # Wikidata QIDs of the two artists covered
 CARAVAGGIO_ID = "Q42207"

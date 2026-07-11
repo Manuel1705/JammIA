@@ -20,12 +20,20 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.types import Command, interrupt
 
 from chatbot import config
+from chatbot.rag.RagChain import RagChain
+from chatbot.rag.prompts import SYNTHESIS_PROMPT_TEMPLATE
 
-# standard answer for out-of-scope sub-questions (other artists or unrelated topics)
-OUT_OF_SCOPE_MESSAGE = (
-    "Questo esula dal mio ambito: rispondo solo a domande su Caravaggio, Caracciolo, "
-    "le loro opere e i musei di Napoli che le espongono."
+# fragment describing what the assistant does answer, reused by the out-of-scope messages
+_SCOPE_FRAGMENT = (
+    "rispondo solo a domande su Caravaggio, Caracciolo, le loro opere e i musei di Napoli che le espongono."
 )
+
+
+def _out_of_scope_note(texts: list) -> str:
+    """Out-of-scope message that names the specific out-of-scope sub-question(s), so the user sees
+    which part of the request was rejected (e.g. 'Riguardo a «Quanto è alta la Torre Eiffel?», ...')."""
+    refs = "; ".join(f"«{t}»" for t in texts)
+    return f"Riguardo a {refs}, questo esula dal mio ambito: {_SCOPE_FRAGMENT}"
 
 
 class DialogState(TypedDict):
@@ -41,15 +49,10 @@ class DialogState(TypedDict):
 
 
 class DialogManager:
-    def __init__(self, chain, llm, db_file=None):
-        """
-        chain: the GraphCypherQAChain (`.invoke({"query": ...}) -> {"result": ...}`) used to answer.
-        llm: chat model (`.invoke(str) -> object with .content`) used to classify and split the question.
-        db_file: path of the SQLite checkpoint (default: config.DIALOG_DB).
-        """
-        self._chain = chain
-        self._llm = llm
-        self._checkpointer_cm = SqliteSaver.from_conn_string(str(db_file or config.DIALOG_DB))
+    def __init__(self, rag: RagChain):
+        self._chain = rag.chain
+        self._llm = rag.llm
+        self._checkpointer_cm = SqliteSaver.from_conn_string(str(config.DIALOG_DB))
         self._checkpointer = self._checkpointer_cm.__enter__()
         self._graph = self._build_graph()
 
@@ -91,7 +94,8 @@ class DialogManager:
         - {"type": "query", "sub_questions": [...]}
         - {"type": "clarification", "text": ...}
         - {"type": "direct", "text": ...}"""
-        prompt = f"""Sei l'instradatore di un chatbot su Caravaggio, Caracciolo, le loro opere e i musei di
+        prompt = f"""
+Sei l'instradatore di un chatbot su Caravaggio, Caracciolo, le loro opere e i musei di
 Napoli che le ospitano. Analizza la richiesta dell'utente e classificala in una di queste tre categorie,
 usando anche gli scambi precedenti come contesto:
 
@@ -188,13 +192,20 @@ DIRETTA: Prego, è stato un piacere!"""
         # checkpoint, if not cleared the conditional edge would mistake it for a direct answer of
         # THIS turn, skipping generate_answer and repeating the old answer (echo across turns).
         if analysis["type"] == "clarification":
-            # pause the graph: the caller must ask the user for the clarification
-            # and then resume the graph with answer_clarification()
+            # pause the graph: the caller asks the user for the clarification, then resumes here
             user_answer = interrupt(analysis["text"])
-            # after the clarification, treat the clarified question as a single in-scope sub-question
             clarified_question = f"{question} (chiarimento: {user_answer})"
-            subs = [{"text": clarified_question, "in_scope": True}]
-            return {"question": clarified_question, "sub_questions": subs, "answer": None}
+            # RE-ANALYZE the clarified question WITH the conversation history, so implicit references
+            # (e.g. "quel museo", "queste opere") get rewritten into self-contained, in-context
+            # sub-questions instead of being sent verbatim to the graph (which would ignore the topic
+            # we were discussing). No second interrupt: if it would clarify again, avoid a loop and
+            # just treat the clarified question as a single in-scope sub-question.
+            analysis2 = self._analyze_question(clarified_question, state)
+            if analysis2["type"] == "query":
+                sub_questions = analysis2["sub_questions"]
+            else:
+                sub_questions = [{"text": clarified_question, "in_scope": True}]
+            return {"question": clarified_question, "sub_questions": sub_questions, "answer": None}
 
         if analysis["type"] == "direct":
             # no query needed: the answer is already ready, generate_answer is skipped
@@ -214,30 +225,58 @@ DIRETTA: Prego, è stato un piacere!"""
             scope = "IN" if sq.get("in_scope", True) else "OUT"
             print(f"   [{scope}] {sq['text']}")
 
-        answers = []
-        for sq in sub_questions:
-            if sq.get("in_scope", True):
-                answers.append(self._invoke_chain_with_retry(sq["text"], sq["text"]))
-            else:
-                # out-of-scope sub-question (other artist/topic): fixed answer, no graph query
-                answers.append(OUT_OF_SCOPE_MESSAGE)
+        in_scope = [sq for sq in sub_questions if sq.get("in_scope", True)]
+        out_of_scope = [sq["text"] for sq in sub_questions if not sq.get("in_scope", True)]
 
-        final_answer = " ".join(a for a in answers if a) or "Si è verificato un errore."
-        return {"answer": final_answer}
+        # no in-scope sub-question: nothing to query, only the out-of-scope note (naming the topics)
+        if not in_scope:
+            return {"answer": _out_of_scope_note(out_of_scope)}
 
-    def _invoke_chain_with_retry(self, sub_question: str, question_with_context: str, max_retry: int = 3) -> str:
-        """Query the chain, retrying if the Cypher generation fails (small models sometimes produce
-        syntactically invalid Cypher; since generation is stochastic, a new attempt often produces a
-        valid query). If all attempts fail, return a fallback message for that sub-question instead of
-        dropping it silently."""
+        # retrieval: ONE Cypher call per in-scope sub-question (return_direct -> raw rows, no QA call)
+        retrieved = [(sq["text"], self._retrieve_with_retry(sq["text"])) for sq in in_scope]
+
+        # a SINGLE synthesis call turns all the collected rows into one coherent answer, regardless of
+        # how many sub-questions there are (a compound question no longer costs one QA call per part)
+        answer = self._synthesize(retrieved)
+
+        # append the out-of-scope note (naming the rejected sub-question) if any part was out of scope
+        if out_of_scope:
+            answer = f"{answer} {_out_of_scope_note(out_of_scope)}".strip()
+        return {"answer": answer}
+
+    def _retrieve_with_retry(self, sub_question: str, max_retry: int = 3) -> list:
+        """Run the retrieval chain for one sub-question and return the raw query rows.
+
+        Retries both on exceptions AND on an EMPTY result: an in-scope sub-question should have data,
+        so an empty result usually means the LLM produced a wrong/empty Cypher (e.g. a backwards
+        relationship that validate_cypher nullified). Since generation is stochastic, a new attempt
+        often produces a valid query. Returns the first non-empty result, or [] if all attempts fail."""
         for attempt in range(max_retry):
             try:
-                result = self._chain.invoke({"query": question_with_context})
-                return result["result"].strip()
+                rows = self._chain.invoke({"query": sub_question})["result"]
+                print(f"📊 [RESULT] {sub_question!r} -> {rows}")
+                if rows:
+                    return rows
+                print(f"[DialogManager] empty result, retrying {attempt + 1}/{max_retry} "
+                      f"on sub-question {sub_question!r}")
             except Exception as e:
                 print(f"[DialogManager] attempt {attempt + 1}/{max_retry} failed "
                       f"on sub-question {sub_question!r}: {e}")
-        return f"Non sono riuscito a recuperare le informazioni per: «{sub_question}»."
+        return []
+
+    def _synthesize(self, retrieved: list) -> str:
+        """Combine the raw rows retrieved for the in-scope sub-questions into a single coherent Italian
+        answer (one LLM call). `retrieved` is a list of (sub_question_text, raw_rows). The original user
+        question is intentionally NOT passed: the model must answer only these blocks, so it cannot
+        comment on out-of-scope parts (handled separately by the out-of-scope note)."""
+        blocks = "\n".join(
+            f"- Sotto-domanda: {sub_q}\n  Dati: {rows}"
+            for sub_q, rows in retrieved
+        )
+        prompt = SYNTHESIS_PROMPT_TEMPLATE.format(results=blocks)
+        answer = self._llm.invoke(prompt).content.strip()
+        print(f"🧠 [SYNTHESIS] {answer}")
+        return answer or "Si è verificato un errore."
 
     @staticmethod
     def _update_state(state: DialogState) -> dict:
