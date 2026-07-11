@@ -24,8 +24,6 @@ class DialogManager:
         rag = RagChain()
         self._chain = rag.chain
         self._llm = rag.llm
-        # deterministic model for classification/decomposition: routing is not a creative task, so a
-        # temperature of 0 makes the analysis stable. The synthesis still uses rag.llm (temp 0.2).
         self._router_llm = ChatOllama(model=config.LLM_MODEL, temperature=0)
         self._checkpointer = MemorySaver()
         self._graph = self._build_graph()
