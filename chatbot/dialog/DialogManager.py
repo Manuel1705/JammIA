@@ -106,11 +106,11 @@ class DialogManager:
     def _generate_answer(self, state: DialogState) -> dict:
         sub_questions = state.get("sub_questions") or [{"text": state["question"], "in_scope": True}]
 
-        in_scope = [sq["text"] for sq in sub_questions if sq.get("in_scope", True)]
-        out_of_scope = [sq["text"] for sq in sub_questions if not sq.get("in_scope", True)]
+        in_scope: list[str] = [sq["text"] for sq in sub_questions if sq.get("in_scope", True)]
+        out_of_scope: list[str] = [sq["text"] for sq in sub_questions if not sq.get("in_scope", True)]
 
         answer_parts = []
-        if in_scope:
+        if in_scope:  # not empty
             # dedupe identical sub-questions (same text -> same rows) and retrieve them in parallel:
             # dict.fromkeys keeps the first occurrence and preserves order.
             unique = list(dict.fromkeys(in_scope))
