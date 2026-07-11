@@ -42,6 +42,13 @@ virgolette. Usa SEMPRE e SOLO l'artista effettivamente nominato nella domanda de
 Non sostituire mai un artista con l'altro: sono due persone diverse.
 - Se ti vengono richieste informazioni su un museo, cerca il museo che CONTENGA quel nome. AD ESEMPIO: se ti viene chiesto 
 del museo di Capodimonte, cerca "MATCH (m:Museo) WHERE m.name CONTAINS 'Capodimonte' RETURN m". Stesso concetto per gli altri musei.
+- Se ti vengono richieste informazioni su un'opera , cerca l'opera che CONTENGA quel nome. AD ESEMPIO: se ti viene chiesto della Flaggellazione, cerca "MATCH (o:opera) WHERE o.name CONTAINS 'Flagellazione' RETURN o". Stesso concetto per le altre opere.
+- Qualunque query fai ignora sempre le maiuscole e le minuscole ad esempio:
+MATCH (o:Opera)-[:DIPINTA_DA]-(a:Artista)
+MATCH (o)-[:ESPOSTA_IN]-(m:Museo)
+WHERE toLower(o.name) CONTAINS toLower("sant'Orsola")
+  AND toLower(a.name) = toLower('Caravaggio')
+RETURN m.name AS museo
 
 REGOLE TASSATIVE DI SINTASSI:
 1. NON inserire MAI le punte delle frecce (< o >) nelle relazioni. Genera query sempre BIDIREZIONALI.

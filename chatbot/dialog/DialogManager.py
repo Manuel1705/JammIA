@@ -228,8 +228,8 @@ def _build_prompt(question: str, state: DialogState) -> str:
     museo). Nella sotto-domanda riscritta NON devono più comparire dimostrativi o pronomi: chi la legge non
     deve aver bisogno della conversazione precedente per capirla.
     Per OGNI sotto-domanda indica "in_scope": true se riguarda Caravaggio, Caracciolo (anche "Merisi" o
-    "Battistello"), le loro opere o i musei/luoghi di Napoli; false se riguarda un ALTRO artista (es.
-    Botticelli, Michelangelo, Raffaello) o un tema non pertinente.
+    "Battistello"), le loro opere o i musei/luoghi di Napoli; false se riguarda un ALTRO (es.
+    Botticelli, Michelangelo, Raffaello) o un tema non pertinente. Se ti chiedo rigurdo a un opera o un museo che non sai se rigurda Caravaggio o Caracciolo imposta in_scope: true.
     2. CHIARIMENTO — la richiesta richiederebbe una query, ma usa un riferimento implicito
     (es. "lui", "quell'opera") che né la richiesta né gli scambi precedenti chiariscono.
     3. DIRETTA — SOLO messaggi puramente sociali (saluti, ringraziamenti, commiati, small talk) che NON
