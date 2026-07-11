@@ -13,6 +13,15 @@ from chatbot.rag.prompts import SYNTHESIS_PROMPT_TEMPLATE
 
 _MAX_RETRIEVAL_WORKERS = 4  # upper bound on concurrent Cypher retrievals
 
+# Etichette di intent riconosciute al primo turno -> nome del nodo di slot-filling dedicato.
+_MENU_INTENTS = {"OPERA": "opera", "MUSEO": "museo", "ARTISTA": "artista", "CERCA": "cerca_opera"}
+#messaggio inixiale che viene mostrato
+_MENU_TEXT = (
+    "Ciao! Come posso aiutarti? Posso darti informazioni su:\n"
+    "1) un'opera\n2) un museo\n3) un artista\n4) aiutarti a cercare un'opera specifica\n"
+    "Dimmi pure cosa ti interessa."
+)
+
 
 def _out_of_scope_note(texts: list) -> str:
     refs = "; ".join(f"«{t}»" for t in texts)
@@ -30,12 +39,36 @@ class DialogManager:
 
     def _build_graph(self):
         g = StateGraph(DialogState)
+        g.add_node("saluta_e_menu", self._saluta_e_menu)
+        g.add_node("classifica_intent", self._classifica_intent)
+        g.add_node("slot_opera", self._slot_opera)
+        g.add_node("slot_museo", self._slot_museo)
+        g.add_node("slot_artista", self._slot_artista)
+        g.add_node("cerca_opera_flow", self._cerca_opera_flow)
+        g.add_node("slot_to_sub_question", self._slot_to_sub_question)
+
         g.add_node("resolve_references", self._update_state)
         g.add_node("clarify", self._clarify)
         g.add_node("generate_answer", self._generate_answer)
         g.add_node("update_history", self._update_history)
 
-        g.add_edge(START, "resolve_references")
+        # --- primo turno: saluto + menu a 4 intent ---
+        g.add_edge(START, "saluta_e_menu")
+        g.add_edge("saluta_e_menu", "classifica_intent")
+        g.add_conditional_edges(
+            "classifica_intent",
+            self._route_after_intent,
+            {
+                "opera": "slot_opera", "museo": "slot_museo",
+                "artista": "slot_artista", "cerca_opera": "cerca_opera_flow",
+                "resolve_references": "resolve_references",
+            },
+        )
+        for n in ("slot_opera", "slot_museo", "slot_artista", "cerca_opera_flow"):
+            g.add_edge(n, "slot_to_sub_question")
+        g.add_edge("slot_to_sub_question", "generate_answer")
+
+        # --- turni successivi (e primo turno se il testo non è riconducibile a nessun intent) ---
         # route by what resolve_references produced: a ready direct answer skips retrieval; a pending
         # clarification goes to the clarify node (which owns the interrupt); otherwise it is a query.
         g.add_conditional_edges(
@@ -48,6 +81,126 @@ class DialogManager:
         g.add_edge("update_history", END)
 
         return g.compile(checkpointer=self._checkpointer)
+
+    # ------------------------------------------------------------------
+    # Nodi del primo turno: saluto, classificazione intent, slot-filling
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _saluta_e_menu(state: DialogState) -> dict:
+        """Primo nodo del grafo. Se ha già salutato, dopo non fa nulla."""
+        if state.get("greeted"):
+            return {}
+        scelta = interrupt(_MENU_TEXT)
+        return {"greeted": True, "question": scelta}
+
+    def _classifica_intent(self, state: DialogState) -> dict:
+        """
+        Al primo turno, classifica l'intent dell'utente su una delle 4 opzioni (Strada A),
+        se nessuna viene scelta passa al flusso libero (Strada B) con la classificazione di clarify ecc."""
+        if state.get("history"):
+            return {"intent": None, "slots": None}
+
+        prompt = f"""Classifica la richiesta dell'utente in una di queste 4 categorie, oppure ALTRO
+        se non è chiaramente riconducibile a nessuna:
+        OPERA — chiede informazioni su un'opera specifica di cui si sa già il nome
+        MUSEO — chiede informazioni su un museo
+        ARTISTA — chiede informazioni su un artista (Caravaggio o Battistello/Caracciolo)
+        CERCA — vuole cercare/identificare un'opera che non sa nominare con certezza 
+        ALTRO — nessuna delle precedenti, incluso small talk o domande generiche
+
+        Richiesta: {state['question']}
+
+        Rispondi con una sola parola: OPERA, MUSEO, ARTISTA, CERCA o ALTRO."""
+        raw = self._router_llm.invoke(prompt).content.strip().upper()
+        # prende la prima etichetta riconosciuta contenuta nella risposta, per tollerare testo extra
+        label = next((k for k in _MENU_INTENTS if k in raw), None)
+        intent = _MENU_INTENTS.get(label)
+        return {"intent": intent, "slots": {}}
+
+    @staticmethod
+    def _route_after_intent(state: DialogState) -> str:
+        """capisce quale delle due strade intraprendere"""
+        return state.get("intent") or "resolve_references"
+
+    def _slot_semplice(self, state: DialogState, campo: str, domanda: str) -> dict:
+        """Se gli slot sono vuoti interrompe il flusso e passa al fare le domande"""
+        slots = dict(state.get("slots") or {})
+        if not slots.get(campo):
+            slots[campo] = interrupt(domanda)
+        return {"slots": slots}
+
+# togliamo opera? credo sia una ripetizione di quello di sotto
+    def _slot_opera(self, state: DialogState) -> dict:
+        return self._slot_semplice(state, "opera", "Di quale opera vuoi sapere qualcosa? Dimmi il titolo.")
+
+    def _slot_museo(self, state: DialogState) -> dict:
+        return self._slot_semplice(state, "museo", "Di quale museo vuoi sapere qualcosa?")
+
+    def _slot_artista(self, state: DialogState) -> dict:
+        return self._slot_semplice(
+            state, "artista", "Di quale artista vuoi sapere qualcosa: Caravaggio o Battistello Caracciolo?"
+        )
+
+    def _cerca_opera_flow(self, state: DialogState) -> dict:
+        """Chiede inizialmente se si qualcosa sull'opera, altrimenti si passa a chiedere le singole cose"""
+        slots = dict(state.get("slots") or {})
+
+        if not any(slots.get(k) for k in ("artista", "titolo", "soggetto")):
+            risposta = interrupt(
+                "Per aiutarti a trovarla: conosci l'artista, il titolo (anche parziale) o il soggetto raffigurato?"
+            )
+            slots.update(self._estrai_criteri(risposta))
+
+        if not any(slots.get(k) for k in ("artista", "titolo", "soggetto")):
+            artista = interrupt("Proviamo diversamente: conosci almeno l'artista?")
+            if artista.strip().lower() not in ("no", "non lo so"):
+                slots["artista"] = artista
+            else:
+                titolo = interrupt("Ricordi anche solo una parola del titolo?")
+                if titolo.strip().lower() not in ("no", "non lo so"):
+                    slots["titolo"] = titolo
+                else:
+                    slots["soggetto"] = interrupt("Ricordi cosa raffigura (persone, scena, oggetti)?")
+
+        return {"slots": slots}
+
+    def _estrai_criteri(self, testo: str) -> dict:
+        """Chiede al modello di estrarre gli slot dal messaggio dell'utente, quindi artista, titolo e soggetti"""
+        prompt = f"""Estrai da questo testo, se presenti, il nome dell'artista, il titolo (anche parziale)
+        e il soggetto raffigurato. Rispondi SOLO con un oggetto JSON valido, senza altro testo, tipo:
+        {{"artista": null, "titolo": null, "soggetto": null}}
+
+        Testo: {testo}"""
+        raw = self._router_llm.invoke(prompt).content.strip()
+        start, end = raw.find("{"), raw.rfind("}")
+        if start == -1 or end <= start:
+            return {}
+        try:
+            data = json.loads(raw[start:end + 1])
+        except (ValueError, TypeError):
+            return {}
+        return {k: v for k, v in data.items() if k in ("artista", "titolo", "soggetto") and v}
+
+    @staticmethod
+    def _slot_to_sub_question(state: DialogState) -> dict:
+        """Gli slot riempiti vengono utilizzati per creare le subquestion da passare al modello"""
+        intent = state.get("intent")
+        slots = state.get("slots") or {}
+        if intent == "opera":
+            testo = f"Dimmi tutto su {slots.get('opera', '')}."
+        elif intent == "museo":
+            testo = f"Dimmi tutto sul museo {slots.get('museo', '')}."
+        elif intent == "artista":
+            testo = f"Dimmi tutto su {slots.get('artista', '')}."
+        else:  # cerca_opera
+            parti = [f"{k}: {v}" for k, v in slots.items() if v]
+            testo = "Trova l'opera con queste caratteristiche: " + ", ".join(parti)
+        return {"sub_questions": [{"text": testo, "in_scope": True}]}
+
+    # ------------------------------------------------------------------
+    # Parte precedente
+    # ------------------------------------------------------------------
 
     @staticmethod
     def _route_after_resolve(state: DialogState) -> str:
@@ -166,7 +319,9 @@ class DialogManager:
         return self._interpret_result(result)
 
     def answer_clarification(self, user_answer: str, thread_id: str = "default") -> dict:
-        """Resume a turn that was paused waiting for a clarification from the user."""
+        """Resume a turn that was paused waiting for a clarification from the user (this covers
+        BOTH the classic clarification node AND any interrupt() raised by the menu/slot nodes:
+        the graph pauses/resumes the same way regardless of which node owns the interrupt)."""
         graph_config = {"configurable": {"thread_id": thread_id}}
         result = self._graph.invoke(Command(resume=user_answer), config=graph_config)
         return self._interpret_result(result)
