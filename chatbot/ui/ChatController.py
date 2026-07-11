@@ -15,20 +15,22 @@ class ChatController:
     "typing" dots on the Chatbot.
     """
 
-    def __init__(self, stt: SpeechToText, dialog_manager: DialogManager, tts=TextToSpeech):
-        self._stt = stt
-        self._dialog = dialog_manager
-        self._tts = tts
+    def __init__(self):
+        self._stt = SpeechToText()
+        self._dialog = DialogManager()
 
     def create_ui(self):
         with gr.Blocks(title="Guida Caravaggio & Caracciolo") as demo:
+            # gr.State must be created INSIDE the Blocks context, otherwise it isn't registered with
+            # this demo and Gradio raises KeyError when reading it during an event (state[block._id]).
+            self._state = gr.State(new_session_state())
+
             gr.Markdown(
                 "# 🎨 Guida alle opere di Caravaggio e Caracciolo\n"
                 "Fai la tua domanda **a voce** (microfono + Invia) oppure **scrivendola** nel campo di testo. "
                 "Le risposte riguardano le opere dei due artisti e i musei di Napoli che le espongono."
             )
 
-            state = gr.State(new_session_state())
 
             chatbot = gr.Chatbot(height=420, label="Conversazione")
 
@@ -54,8 +56,8 @@ class ChatController:
                 outputs=[chatbot, audio_in],
             ).then(
                 self._generate_bot_answer,
-                inputs=[chatbot, state],
-                outputs=[chatbot, audio_out, state],
+                inputs=[chatbot, self._state],
+                outputs=[chatbot, audio_out, self._state],
             )
             # text: show the message (step 1), then generate the answer (step 2)
             text_in.submit(
@@ -64,13 +66,13 @@ class ChatController:
                 outputs=[chatbot, text_in],
             ).then(
                 self._generate_bot_answer,
-                inputs=[chatbot, state],
-                outputs=[chatbot, audio_out, state],
+                inputs=[chatbot, self._state],
+                outputs=[chatbot, audio_out, self._state],
             )
             reset_btn.click(
                 self.new_conversation,
                 inputs=None,
-                outputs=[chatbot, audio_out, state, audio_in, text_in],
+                outputs=[chatbot, audio_out, self._state, audio_in, text_in],
             )
             return demo
 
@@ -91,7 +93,7 @@ class ChatController:
         # speech synthesis (gTTS) depends on an external service and can fail transiently:
         # in that case we still show the text answer, just without audio
         try:
-            answer_audio = self._tts.synthesize(bot_text)
+            answer_audio = TextToSpeech.synthesize(bot_text)
         except Exception as e:
             print(f"[app] speech synthesis failed, showing text only: {e}")
             answer_audio = None

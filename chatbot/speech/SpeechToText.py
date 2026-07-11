@@ -1,8 +1,10 @@
 """Speech recognition (speech-to-text) via Whisper. Shared by the web interface."""
 import numpy as np
 from transformers import pipeline
-
 from chatbot import config
+from transformers.utils import logging as hf_logging
+
+hf_logging.set_verbosity_error()
 
 
 class SpeechToText:

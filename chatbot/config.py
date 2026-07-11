@@ -2,8 +2,8 @@
 
 All constants (credentials, model names, endpoints, file paths) live here, so they are not
 duplicated across modules. Paths are computed from BASE_DIR (the repository root) rather than the
-working directory: this way cache, queries and the SQLite database always end up in the same
-location, regardless of where the script is launched from.
+working directory: this way cache and queries always end up in the same location, regardless of
+where the script is launched from.
 """
 import os
 from pathlib import Path
@@ -27,7 +27,6 @@ LLM_TEMPERATURE = 0.2
 QUERY_DIR = BASE_DIR / "query"
 CACHE_SPARQL = BASE_DIR / "cache_sparql.json"
 CACHE_WIKIPEDIA = BASE_DIR / "cache_wikipedia.json"
-DIALOG_DB = BASE_DIR / "dialog_state.sqlite"
 
 # ── Wikidata (SPARQL) ─────────────────────────────────────────
 SPARQL_ENDPOINT = "https://query.wikidata.org/sparql"
