@@ -1,24 +1,48 @@
-from typing import TypedDict, List, Optional
+from typing import List, Optional, TypedDict
+
+from pydantic import BaseModel, Field
 
 
-class DialogState(TypedDict):
+class Turn(BaseModel):
     question: str
-    history: List[dict]  # [{"question", "answer"}]
-    sub_questions: Optional[List[dict]]  # {"text": str, "in_scope": bool}
-    clarification_text: Optional[str]  # question to ask the user when a clarification is needed
-    answer: Optional[str]
-    greeted: Optional[bool] #True dopo che il chatbot ha salutato all'inizio
-    intent: Optional[str] # quale delle 4 azioni è intrapresa dall'utente (opera, museo, artista o cerca)
-    slots: Optional[dict] # info raccolte per l'intent attuale
+    answer: Optional[str] = None
+
+    def __str__(self) -> str:
+        return f"Question: {self.question}\n Response: {self.answer}"
 
 
-def get_recent_history(state: DialogState, n: int = 3) -> str:
-    """Format the last n question/answer exchanges, to give the model the context needed to
-    resolve implicit references (e.g. "these paintings", "that work"). The labels stay Italian
-    because this text is fed into the Italian LLM prompt."""
-    history = state.get("history", [])[-n:]
-    if not history: return "nessuno"
-    return "\n".join(
-        f"- Domanda: {turn['question']}\n  Risposta: {turn['answer']}"
-        for turn in history
-    )
+class SubQuestion(BaseModel):
+    question: str
+    in_scope: bool = True
+
+    def __str__(self) -> str:
+        return f"Question: {self.question}\n In scope: {self.in_scope}"
+
+
+class DialogState(BaseModel):
+    question: str = ""
+    sub_questions: Optional[List[SubQuestion]] = None
+    clarification_question: Optional[str] = None
+    clarification_attempts: int = 0  # giri di chiarimento fatti nel turno corrente (cap anti-loop)
+    history: List[Turn] = Field(default_factory=list)
+    response: Optional[str] = None
+
+    def get_recent_history(self, n: int = 3) -> str:
+        """Ultimi n scambi formattati per il prompt (o 'nessuno' se non c'è storia)."""
+        return "\n".join(str(turn) for turn in self.history[-n:]) or "nessuno"
+
+    def current_turn(self) -> Turn:
+        return Turn(question=self.question, answer=self.response)
+
+    def append_current_turn_to_history(self, n: int = 10) -> List[Turn]:
+        """Nuova history (copia) con il turno corrente in coda, troncata agli ultimi n. Non muta self."""
+        return (self.history + [self.current_turn()])[-n:]
+
+
+class DialogStateUpdate(TypedDict, total=False):
+    question: str
+    sub_questions: Optional[List[SubQuestion]]
+    clarification_question: Optional[str]
+    clarification_attempts: int
+    history: List[Turn]
+    response: Optional[str]

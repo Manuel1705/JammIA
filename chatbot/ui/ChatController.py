@@ -5,6 +5,15 @@ from chatbot.dialog.DialogManager import DialogManager
 from chatbot.speech.TextToSpeech import TextToSpeech
 from chatbot.speech.SpeechToText import SpeechToText
 
+# saluto iniziale mostrato in chat (all'avvio e dopo "Nuova conversazione")
+_GREETING = {
+    "role": "assistant",
+    "content": (
+        "Ciao! Sono la guida alle opere di Caravaggio e Caracciolo e ai musei di Napoli "
+        "che le espongono. Chiedimi pure ciò che vuoi sapere."
+    ),
+}
+
 
 class ChatController:
     """Holds the app's dependencies (speech-to-text, dialogue manager, text-to-speech) and exposes
@@ -32,7 +41,7 @@ class ChatController:
             )
 
 
-            chatbot = gr.Chatbot(height=420, label="Conversazione")
+            chatbot = gr.Chatbot(height=420, label="Conversazione", value=[_GREETING])
 
             text_in = gr.Textbox(
                 label="Oppure scrivi la domanda",
@@ -135,5 +144,5 @@ class ChatController:
 
     @staticmethod
     def new_conversation():
-        """Reset chat and state with a new thread_id (clean history)."""
-        return [], None, new_session_state(), gr.update(value=None), gr.update(value="")
+        """Reset chat and state with a new thread_id (clean history), keeping the greeting."""
+        return [_GREETING], None, new_session_state(), gr.update(value=None), gr.update(value="")
