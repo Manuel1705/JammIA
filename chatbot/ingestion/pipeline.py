@@ -1,8 +1,4 @@
-"""Database population pipeline: Wikidata → extraction → Neo4j.
-
-Orchestrates the three ingestion components: queries Wikidata (with cache), normalizes and enriches
-the data with Wikipedia, then clears and repopulates the Neo4j graph.
-"""
+from collections.abc import Callable
 from chatbot.ingestion.Extractor import Extractor
 from chatbot.ingestion.Neo4jLoader import Neo4jLoader
 from chatbot.ingestion.SparqlExecutor import SparqlExecutor
@@ -12,10 +8,15 @@ CARAVAGGIO_ID = "Q42207"
 CARACCIOLO_ID = "Q2519261"
 
 
-def populate_database():
+def _insert(insert_fn: Callable[[dict], None], items: list[dict], label: str) -> None:
+    print(f"Inserting {label}...")
+    for item in items:
+        insert_fn(item)
+
+
+def populate_database() -> None:
     """Run the whole ingestion pipeline and repopulate Neo4j from scratch."""
-    executor = SparqlExecutor()
-    results = executor.execute_all()
+    results = SparqlExecutor().execute_all()
 
     print("\n📖 Extracting data...")
     extractor = Extractor()
@@ -24,24 +25,11 @@ def populate_database():
     works_caracciolo = extractor.extract_works(results.works_caracciolo, artist_id=CARACCIOLO_ID)
     museums = extractor.extract_museums(results.museums)
 
-    loader = Neo4jLoader()
-    loader.clear_database()
+    with Neo4jLoader() as loader:
+        loader.clear_database()
+        _insert(loader.insert_artist, artists, "artists")
+        _insert(loader.insert_museum, museums, "museums")
+        _insert(loader.insert_work, works_caravaggio, "Caravaggio works")
+        _insert(loader.insert_work, works_caracciolo, "Caracciolo works")
 
-    print("\n Inserting artists...")
-    for artist in artists:
-        loader.insert_artist(artist)
-
-    print("Inserting museums...")
-    for museum in museums:
-        loader.insert_museum(museum)
-
-    print("Inserting Caravaggio works...")
-    for work in works_caravaggio:
-        loader.insert_work(work)
-
-    print("Inserting Caracciolo works...")
-    for work in works_caracciolo:
-        loader.insert_work(work)
-
-    loader.close()
-    print("\n Neo4j database populated successfully!")
+    print("\n✅ Neo4j database populated successfully!")

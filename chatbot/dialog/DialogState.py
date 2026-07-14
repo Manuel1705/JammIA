@@ -23,20 +23,20 @@ class DialogState(BaseModel):
     question: str = ""
     sub_questions: Optional[List[SubQuestion]] = None
     clarification_question: Optional[str] = None
-    clarification_attempts: int = 0  # giri di chiarimento fatti nel turno corrente (cap anti-loop)
+    clarification_attempts: int = 0
     history: List[Turn] = Field(default_factory=list)
     response: Optional[str] = None
 
     def get_recent_history(self, n: int = 3) -> str:
-        """Ultimi n scambi formattati per il prompt (o 'nessuno' se non c'è storia)."""
         return "\n".join(str(turn) for turn in self.history[-n:]) or "nessuno"
 
     def current_turn(self) -> Turn:
         return Turn(question=self.question, answer=self.response)
 
     def append_current_turn_to_history(self, n: int = 10) -> List[Turn]:
-        """Nuova history (copia) con il turno corrente in coda, troncata agli ultimi n. Non muta self."""
-        return (self.history + [self.current_turn()])[-n:]
+        new_history = self.history.copy()
+        new_history.append(self.current_turn())
+        return new_history[-n:]
 
 
 class DialogStateUpdate(TypedDict, total=False):

@@ -1,5 +1,5 @@
 from concurrent.futures import ThreadPoolExecutor
-from typing import Any, Literal, TypedDict, cast
+from typing import Literal, TypedDict, cast
 
 from langchain_core.runnables import RunnableConfig
 from langchain_ollama import ChatOllama
@@ -20,7 +20,7 @@ from chatbot.rag.prompts import COMBINE_PROMPTS_TEMPLATE
 
 class TurnResult(TypedDict):
     """Esito di un turno restituito alla UI."""
-    type: Literal["answer", "clarification"]
+    type: Literal["answer", "clarification_question"]
     text: str
 
 
@@ -165,17 +165,18 @@ class DialogManager:
         return DialogStateUpdate(history=state.append_current_turn_to_history())
 
     def invoke(self, question: str, thread_id: str = "default") -> TurnResult:
-        return self._interpret_result(
-            self._graph.invoke({"question": question}, config=cast(RunnableConfig, cast(object, {
-                "configurable": {"thread_id": thread_id}}))))
+        graph_config: RunnableConfig = {"configurable": {"thread_id": thread_id}}
+        result = self._graph.invoke({"question": question}, config=graph_config)
+        return self._interpret_result(result)
 
-    def answer_clarification(self, user_answer: str, thread_id: str = "default") -> TurnResult:
-        return self._interpret_result(
-            self._graph.invoke(Command(resume=user_answer), config=cast(RunnableConfig, cast(object, {
-                "configurable": {"thread_id": thread_id}}))))
+    def answer_clarification(self, user_clarification: str, thread_id: str = "default") -> TurnResult:
+        graph_config: RunnableConfig = {"configurable": {"thread_id": thread_id}}
+        result = self._graph.invoke(Command(resume=user_clarification), config=graph_config)
+        return self._interpret_result(result)
 
     @staticmethod
     def _interpret_result(result: dict) -> TurnResult:
+        """Takes the graph response and maps it to a TurnResult to be displayed in the UI"""
         if "__interrupt__" in result:
-            return TurnResult(type="clarification", text=result["__interrupt__"][0].value)
+            return TurnResult(type="clarification_question", text=result["__interrupt__"][0].value)
         return TurnResult(type="answer", text=result["response"])
