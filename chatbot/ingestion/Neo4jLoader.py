@@ -31,6 +31,7 @@ class Neo4jLoader:
             ON CREATE SET
                 a.name           = $name,
                 a.data_nascita   = $birth_date,
+                a.data_morte     = $death_date,
                 a.luogo_nascita  = $birth_place,
                 a.movimenti      = $movements,
                 a.opere_notevoli = $notable_works
@@ -77,6 +78,5 @@ class Neo4jLoader:
 
             WITH o
             MATCH (m:Museo {wikidataId: $museum_id})
-            MERGE (0)-[:ESPOSTA_IN]->(m)
-            )
+            MERGE (o)-[:ESPOSTA_IN]->(m)
         """, work)

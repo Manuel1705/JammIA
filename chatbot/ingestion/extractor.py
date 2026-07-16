@@ -100,6 +100,7 @@ class Extractor:
                 "wikidata_id": qid,
                 "name": self._get_key_value_from_binding(r, "nome", "N/D"),
                 "birth_date": self._get_key_value_from_binding(r, "dataNascita")[:10],
+                "death_date": self._get_key_value_from_binding(r, "dataMorte")[:10],
                 "birth_place": self._get_key_value_from_binding(r, "luogoNascitaLabel"),
                 "movements": movements,
                 "notable_works": self._get_key_value_from_binding(r, "opereNotevoli"),

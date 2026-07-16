@@ -2,7 +2,7 @@ PREFIX wd: <http://www.wikidata.org/entity/>
 PREFIX wdt: <http://www.wikidata.org/prop/direct/>
 PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
 
-SELECT ?artista ?nome (MIN(?nascita) AS ?dataNascita) ?luogoNascitaLabel
+SELECT ?artista ?nome (MIN(?nascita) AS ?dataNascita) (MIN(?morte) AS ?dataMorte) ?luogoNascitaLabel
        (GROUP_CONCAT(DISTINCT ?movimentoLabel; SEPARATOR=", ") AS ?movimenti)
        (GROUP_CONCAT(DISTINCT ?operaNotevoleLabel; SEPARATOR=", ") AS ?opereNotevoli)
 WHERE {
@@ -12,6 +12,7 @@ WHERE {
     FILTER(lang(?nome) = "it")
 
     OPTIONAL { ?artista wdt:P569 ?nascita . }
+    OPTIONAL { ?artista wdt:P570 ?morte . }
     OPTIONAL {
         ?artista wdt:P19 ?luogoNascita .
         ?luogoNascita rdfs:label ?luogoNascitaLabel .
