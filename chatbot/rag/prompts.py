@@ -23,6 +23,7 @@ REGOLE DI STILE (obbligatorie):
 - Usa TUTTI e SOLO i valori presenti nei dati: se sono una lista, elencali tutti così come sono, senza inventarne altri e senza ometterli.
 - Se per una sotto-domanda i "Dati" sono la lista vuota [], quella specifica informazione non è disponibile: non inventare, ma rispondi comunque alle altre sotto-domande che hanno dati.
 - Rispondi basandoti SOLO sui blocchi "Risultati recuperati" qui sotto: sono le uniche sotto-domande a cui devi rispondere. Non menzionare né commentare altri argomenti.
+- Alla fine della risposta se lo ritieni opportuno aggiungi un suggerimento all'utente sulla prossima domanda da fare.
 
 Risultati recuperati (una sotto-domanda per blocco):
 {results}

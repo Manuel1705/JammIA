@@ -90,7 +90,14 @@ class DialogManager:
 
     def _classify_question(self, question: str, state: DialogState) -> ModelResponse:
         prompt = build_prompt_classifier_prompt(question, state)
-        response = cast(ModelResponse, self._structured_chat_model.invoke(prompt))
+        try:
+            response = cast(ModelResponse, self._structured_chat_model.invoke(prompt))
+        except Exception as e:
+            print(f"[DialogManager] prompt classification failed: {e}")
+            response = ModelResponse(
+                type="clarification",
+                clarification_question="Scusa, non ho capito. Puoi riformulare la tua richiesta?"
+            )
         print(response)
         return response
 
@@ -143,8 +150,8 @@ class DialogManager:
         for attempt in range(max_retry):
             try:
                 result_rows = self._rag.chain.invoke({"query": query})["result"]
-                print(f"📊 [RESULT] {query!r} -> {result_rows}")
                 if result_rows:
+                    print(f"\n📊 [RESULT] {query!r} -> {result_rows}")
                     return result_rows
                 print(f"[DialogManager] empty result, retrying {attempt + 1}/{max_retry} "
                       f"on query {query!r}")
@@ -160,7 +167,7 @@ class DialogManager:
         )
         prompt = COMBINE_PROMPTS_TEMPLATE.format(results=blocks)
         answer = self._rag.llm.invoke(prompt).content.strip()
-        print(f"🧠 [RESPONSE] {answer}")
+        print(f"\n🧠 [RESPONSE] {answer}")
         return answer or "An Error occurred during sub answers combination"
 
     @staticmethod
