@@ -10,7 +10,7 @@ class Neo4jLoader:
             auth=(config.NEO4J_USER, config.NEO4J_PASSWORD)
         )
 
-    def __enter__(self) -> "Neo4jLoader":
+    def __enter__(self) -> Neo4jLoader:
         return self
 
     def __exit__(self, *exc) -> None:

@@ -25,8 +25,8 @@ LLM_TEMPERATURE = 0.2
 
 # ── Paths (relative to the repo root) ─────────────────────────
 QUERY_DIR = BASE_DIR / "query"
-CACHE_SPARQL = BASE_DIR / "cache_sparql.json"
-CACHE_WIKIPEDIA = BASE_DIR / "cache_wikipedia.json"
+CACHE_SPARQL = BASE_DIR / "cache/sparql_cache.json"
+CACHE_WIKIPEDIA = BASE_DIR / "cache/wikipedia_cache.json"
 
 # ── Wikidata (SPARQL) ─────────────────────────────────────────
 SPARQL_ENDPOINT = "https://query.wikidata.org/sparql"
@@ -35,6 +35,16 @@ USER_AGENT = "CaravaggioBot/1.0 (progetto universitario NLP; tuaemail@esempio.co
 # ── Wikipedia (text descriptions) ─────────────────────────────
 WIKI_API = "https://it.wikipedia.org/w/api.php"
 WIKI_HEADERS = {"User-Agent": "CaravaggioBot/1.0 (progetto universitario NLP)"}
+
+# Wikidata QIDs of the two artists covered
+CARAVAGGIO_ID = "Q42207"
+CARACCIOLO_ID = "Q2519261"
+
+# Fallback art movements, used when Wikidata does not return them for a given artist
+DEFAULT_MOVEMENTS = {
+    CARAVAGGIO_ID: "Barocco, Controriforma",
+    CARACCIOLO_ID: "Caravaggismo, Barocco napoletano",
+}
 
 # ── Speech (recognition and synthesis) ────────────────────────
 WHISPER_MODEL = "openai/whisper-large-v3"

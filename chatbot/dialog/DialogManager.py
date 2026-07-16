@@ -77,7 +77,10 @@ class DialogManager:
             return NodeType.HISTORY_UPDATE
         if state.clarification_question:
             return NodeType.USER_INTENT_CLARIFICATION
-        return NodeType.RESPONSE_GENERATION
+        if state.sub_questions:
+            return NodeType.RESPONSE_GENERATION
+
+        return NodeType.USER_INTENT_CLARIFICATION
 
     @staticmethod
     def _route_after_clarification(state: DialogState) -> NodeType:
@@ -94,7 +97,7 @@ class DialogManager:
     def _classify_user_prompt(self, state: DialogState) -> DialogStateUpdate:
         response = self._classify_question(state.question, state)
         return DialogStateUpdate(
-            response=response.response if response.type == "direct" else None,
+            response=response.response if response.type == "chitchat" else None,
             clarification_question=response.clarification_question if response.type == "clarification" else None,
             sub_questions=response.sub_questions if response.type == "query" else None,
             clarification_attempts=0)

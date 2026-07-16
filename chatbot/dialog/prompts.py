@@ -9,8 +9,8 @@ def build_prompt_classifier_prompt(question: str, state: DialogState) -> str:
     
     2. CHIARIMENTO — la richiesta richiederebbe una query, ma usa un riferimento implicito (es. "lui", "quell'opera") che né la richiesta né gli scambi precedenti chiariscono.
     
-    3. DIRETTA — SOLO messaggi puramente sociali (saluti, ringraziamenti, commiati, small talk) che NON contengono NESSUNA richiesta di informazioni. Se il messaggio contiene una qualsiasi domanda su opere/artisti/musei, NON è mai DIRETTA: è QUERY.
-
+    3. CHITCHAT — SOLO messaggi puramente sociali (saluti, ringraziamenti, commiati, small talk) che NON contengono NESSUNA richiesta di informazioni. Se il messaggio contiene una qualsiasi domanda su opere/artisti/musei, NON è mai DIRETTA: è QUERY.
+    
     Scambi precedenti (dal più vecchio al più recente):
     {state.get_recent_history()}
 
@@ -22,7 +22,7 @@ def build_prompt_classifier_prompt(question: str, state: DialogState) -> str:
     
     - CHIARIMENTO: {{"type": "clarification", "question": "<unica domanda di chiarimento, breve e diretta>"}}
     
-    - DIRETTA:     {{"type": "direct", "text": "<risposta breve e cordiale in italiano>"}}
+    - CHITCHAT:     {{"type": "chitchat", "text": "<risposta breve e cordiale in italiano>"}}
 
     Esempi (richiesta -> output JSON):
     "Quanti quadri di Caravaggio sono a Napoli?"
@@ -32,10 +32,13 @@ def build_prompt_classifier_prompt(question: str, state: DialogState) -> str:
     {{"type": "query", "sub_questions": [{{"question": "Quali sono i titoli dei quadri di Caravaggio esposti a Napoli?", "in_scope": true}}]}}
 
     "Come si chiamano queste opere e quante ne ha fatte Botticelli?" (dopo aver parlato delle opere di Caravaggio a Napoli)
-    {{"type": "query", "sub_questions": [{{"question": "Come si chiamano le opere di Caravaggio esposte a Napoli?", "in_scope": true}}, {{"text": "Quante opere ha fatto Botticelli?", "in_scope": false}}]}}
+    {{"type": "query", "sub_questions": [{{"question": "Come si chiamano le opere di Caravaggio esposte a Napoli?", "in_scope": true}}, {{"question": "Quante opere ha fatto Botticelli?", "in_scope": false}}]}}
 
     "Chi l'ha dipinta?" (nessuna opera nominata prima)
     {{"type": "clarification", "question": "Di quale opera stai parlando?"}}
 
     "Grazie mille!"
-    {{"type": "direct", "text": "Prego, è stato un piacere!"}}"""
+    {{"type": "chitchat", "response": "Prego, è stato un piacere!"}}
+
+    "Ciao"
+    {{"type": "chitchat", "response": "Ciao, come posso aiutarti!"}}"""

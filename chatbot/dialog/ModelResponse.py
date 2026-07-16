@@ -5,7 +5,7 @@ from chatbot.dialog.DialogState import SubQuestion
 
 
 class ModelResponse(BaseModel):
-    type: Literal["query", "clarification", "direct"]
+    type: Literal["query", "clarification", "chitchat"]
     sub_questions: Optional[list[SubQuestion]] = None  # if type query
     clarification_question: Optional[str] = None  # if type clarification
     response: Optional[str] = None  # if type direct
