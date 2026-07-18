@@ -1,5 +1,5 @@
 from concurrent.futures import ThreadPoolExecutor
-from typing import Literal, TypedDict, cast
+from typing import Literal, TypedDict
 
 from langchain_core.runnables import RunnableConfig
 from langchain_ollama import ChatOllama
@@ -28,7 +28,6 @@ class DialogManager:
     def __init__(self):
         self._rag = RagChain()
         self._chat_model = ChatOllama(model=config.LLM_MODEL, temperature=0)
-        self._structured_chat_model = self._chat_model.with_structured_output(ModelResponse)
         self._checkpointer = MemorySaver(serde=JsonPlusSerializer(allowed_msgpack_modules=[Turn, SubQuestion]))
         self._graph = self._build_state_graph()
 
@@ -91,10 +90,20 @@ class DialogManager:
             return NodeType.HISTORY_UPDATE
         return NodeType.RESPONSE_GENERATION
 
+    @staticmethod
+    def _extract_json(raw: str) -> str:
+        """Il modello a volte avvolge il JSON in fence markdown o antepone testo (es. "json {...}").
+        Estrae la porzione tra la prima '{' e l'ultima '}', tollerando questi extra."""
+        start, end = raw.find("{"), raw.rfind("}")
+        if start == -1 or end == -1:
+            raise ValueError(f"nessun oggetto JSON nella risposta del modello: {raw!r}")
+        return raw[start:end + 1]
+
     def _classify_question(self, question: str, state: DialogState) -> ModelResponse:
         prompt = build_prompt_classifier_prompt(question, state)
         try:
-            response = cast(ModelResponse, self._structured_chat_model.invoke(prompt))
+            raw = self._chat_model.invoke(prompt).content
+            response = ModelResponse.model_validate_json(self._extract_json(raw))
         except Exception as e:
             print(f"[DialogManager] prompt classification failed: {e}")
             response = ModelResponse(
