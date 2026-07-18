@@ -8,7 +8,10 @@ class Turn(BaseModel):
     answer: Optional[str] = None
 
     def __str__(self) -> str:
-        return f"Question: {self.question}\n Response: {self.answer}"
+        # Etichette esplicite dei ruoli: il classificatore deve riconoscere che "Assistente (tu)"
+        # sono le SUE risposte precedenti (incluse le offerte tipo "Se vuoi posso darti info su..."),
+        # da usare per risolvere riferimenti impliciti e accettazioni ("sì", "fallo").
+        return f"Utente: {self.question}\nAssistente (tu): {self.answer}"
 
 
 class SubQuestion(BaseModel):

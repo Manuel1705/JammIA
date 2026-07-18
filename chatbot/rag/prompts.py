@@ -24,7 +24,10 @@ REGOLE DI STILE (obbligatorie):
 - Usa TUTTI e SOLO i valori presenti nei dati: se sono una lista, elencali tutti così come sono, senza inventarne altri e senza ometterli.
 - Se per una sotto-domanda i "Dati" sono la lista vuota [], quella specifica informazione non è disponibile: non inventare, ma rispondi comunque alle altre sotto-domande che hanno dati.
 - Rispondi basandoti SOLO sui blocchi "Risultati recuperati" qui sotto: sono le uniche sotto-domande a cui devi rispondere. Non menzionare né commentare altri argomenti.
-- Alla fine della risposta se lo ritieni opportuno aggiungi un suggerimento all'utente sulla prossima domanda da fare inziando con "Se vuoi posso darti informazioni anche su [continua]".
+- Alla fine della risposta se lo ritieni opportuno aggiungi UN suggerimento sulla prossima domanda, iniziando con "Se vuoi posso darti informazioni anche su [continua]". Il suggerimento deve rispettare TUTTE queste condizioni:
+  1. SOLO argomenti nel tuo ambito: Caravaggio, Caracciolo, le loro opere o i musei di Napoli che le espongono. MAI suggerire altri artisti, altre città, "periodi artistici" o argomenti generici.
+  2. Deve essere CONCRETO e nominare esplicitamente l'entità (es. "...anche su Caracciolo", "...anche sulla Flagellazione di Cristo", "...anche sul Museo di Capodimonte"), MAI vago (es. "...su altre loro città", "...su altri artisti napoletani").
+  3. Se non hai un suggerimento pertinente e concreto, NON aggiungere nulla.
 
 Risultati recuperati (una sotto-domanda per blocco):
 {results}
