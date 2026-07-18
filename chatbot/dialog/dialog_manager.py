@@ -10,17 +10,17 @@ from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import Command, interrupt
 
 from chatbot import config
-from chatbot.dialog.ModelResponse import ModelResponse
-from chatbot.dialog.NodeType import NodeType
-from chatbot.dialog.DialogState import DialogState, SubQuestion, Turn, DialogStateUpdate
+from chatbot.dialog.model_response import ModelResponse
+from chatbot.dialog.node_type import NodeType
+from chatbot.dialog.dialog_state import DialogState, SubQuestion, Turn, DialogStateUpdate
 from chatbot.dialog.prompts import build_prompt_classifier_prompt
-from chatbot.rag.RagChain import RagChain
+from chatbot.rag.rag_chain import RagChain
 from chatbot.rag.prompts import COMBINE_PROMPTS_TEMPLATE
 
 
 class TurnResult(TypedDict):
     """Esito di un turno restituito alla UI."""
-    type: Literal["answer", "clarification_question"]
+    type: Literal["answer", "clarification"]
     text: str
 
 
@@ -58,6 +58,7 @@ class DialogManager:
             {
                 NodeType.USER_INTENT_CLARIFICATION: NodeType.USER_INTENT_CLARIFICATION,
                 NodeType.RESPONSE_GENERATION: NodeType.RESPONSE_GENERATION,
+                NodeType.HISTORY_UPDATE: NodeType.HISTORY_UPDATE,
             },
         )
         g.add_edge(NodeType.RESPONSE_GENERATION, NodeType.HISTORY_UPDATE)
@@ -86,6 +87,8 @@ class DialogManager:
     def _route_after_clarification(state: DialogState) -> NodeType:
         if state.clarification_question:
             return NodeType.USER_INTENT_CLARIFICATION
+        if state.response:
+            return NodeType.HISTORY_UPDATE
         return NodeType.RESPONSE_GENERATION
 
     def _classify_question(self, question: str, state: DialogState) -> ModelResponse:
@@ -121,6 +124,13 @@ class DialogManager:
                 clarification_question=response.clarification_question,
                 sub_questions=None,
                 response=None)
+        if response.type == "chitchat":
+            return DialogStateUpdate(
+                question=question,
+                clarification_attempts=0,
+                sub_questions=None,
+                clarification_question=None,
+                response=response.response)
         return DialogStateUpdate(
             question=question,
             clarification_attempts=0,
@@ -147,14 +157,12 @@ class DialogManager:
         return {"response": " ".join(answer_parts).strip()}
 
     def _query_graph_with_retries(self, query: str, max_retry: int = 3) -> list:
+        """Retries only on ERRORS (Cypher non valido, connessione, ecc.): un risultato vuoto su query riuscita è una risposta legittima ("non c'è") e non va ritentato."""
         for attempt in range(max_retry):
             try:
                 result_rows = self._rag.chain.invoke({"query": query})["result"]
-                if result_rows:
-                    print(f"\n📊 [RESULT] {query!r} -> {result_rows}")
-                    return result_rows
-                print(f"[DialogManager] empty result, retrying {attempt + 1}/{max_retry} "
-                      f"on query {query!r}")
+                print(f"\n📊 [RESULT] {query!r} -> {result_rows}")
+                return result_rows
             except Exception as e:
                 print(f"[DialogManager] attempt {attempt + 1}/{max_retry} failed "
                       f"on query {query!r}: {e}")
@@ -188,5 +196,7 @@ class DialogManager:
     def _interpret_result(result: dict) -> TurnResult:
         """Takes the graph response and maps it to a TurnResult to be displayed in the UI"""
         if "__interrupt__" in result:
-            return TurnResult(type="clarification_question", text=result["__interrupt__"][0].value)
-        return TurnResult(type="answer", text=result["response"])
+            return TurnResult(type="clarification", text=result["__interrupt__"][0].value)
+        # .get + fallback: se il grafo termina senza risposta (caso anomalo) non deve esplodere la UI
+        text = result.get("response") or "Scusa, si è verificato un problema. Puoi riprovare?"
+        return TurnResult(type="answer", text=text)

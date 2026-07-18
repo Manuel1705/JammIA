@@ -1,9 +1,9 @@
 import gradio as gr
 
-from chatbot.ui.SessionState import SessionState, new_session_state
-from chatbot.dialog.DialogManager import DialogManager
-from chatbot.speech.TextToSpeech import TextToSpeech
-from chatbot.speech.SpeechToText import SpeechToText
+from chatbot.ui.session_state import SessionState, new_session_state
+from chatbot.dialog.dialog_manager import DialogManager
+from chatbot.speech.text_to_speech import TextToSpeech
+from chatbot.speech.speech_to_text import SpeechToText
 
 # saluto iniziale mostrato in chat (all'avvio e dopo "Nuova conversazione")
 _GREETING = {
@@ -32,14 +32,17 @@ class ChatController:
         with gr.Blocks(title="Guida Caravaggio & Caracciolo") as demo:
             # gr.State must be created INSIDE the Blocks context, otherwise it isn't registered with
             # this demo and Gradio raises KeyError when reading it during an event (state[block._id]).
-            self._state = gr.State(new_session_state())
+            # Initial value None (NOT new_session_state()): the initial value is evaluated once at UI
+            # build time and deep-copied to every session, so all users would share the same thread_id
+            # (and thus the same conversation memory). The state is initialized lazily per session in
+            # _generate_bot_answer.
+            state = gr.State(None)
 
             gr.Markdown(
                 "# 🎨 Guida alle opere di Caravaggio e Caracciolo\n"
                 "Fai la tua domanda **a voce** (microfono + Invia) oppure **scrivendola** nel campo di testo. "
                 "Le risposte riguardano le opere dei due artisti e i musei di Napoli che le espongono."
             )
-
 
             chatbot = gr.Chatbot(height=420, label="Conversazione", value=[_GREETING])
 
@@ -65,8 +68,8 @@ class ChatController:
                 outputs=[chatbot, audio_in],
             ).then(
                 self._generate_bot_answer,
-                inputs=[chatbot, self._state],
-                outputs=[chatbot, audio_out, self._state],
+                inputs=[chatbot, state],
+                outputs=[chatbot, audio_out, state],
             )
             # text: show the message (step 1), then generate the answer (step 2)
             text_in.submit(
@@ -75,13 +78,13 @@ class ChatController:
                 outputs=[chatbot, text_in],
             ).then(
                 self._generate_bot_answer,
-                inputs=[chatbot, self._state],
-                outputs=[chatbot, audio_out, self._state],
+                inputs=[chatbot, state],
+                outputs=[chatbot, audio_out, state],
             )
             reset_btn.click(
                 self.new_conversation,
                 inputs=None,
-                outputs=[chatbot, audio_out, self._state, audio_in, text_in],
+                outputs=[chatbot, audio_out, state, audio_in, text_in],
             )
             return demo
 
@@ -94,7 +97,7 @@ class ChatController:
         else:
             result = self._dialog.invoke(question, thread_id=thread_id)
 
-        state["awaiting_clarification"] = (result["type"] == "clarification")
+        state["awaiting_clarification"] = result["type"] == "clarification"
 
         bot_text = result["text"]
         label = "❓ " + bot_text if result["type"] == "clarification" else bot_text
@@ -124,9 +127,11 @@ class ChatController:
             return history, gr.update(value=None)
         return history + [{"role": "user", "content": question}], gr.update(value=None)
 
-    def _generate_bot_answer(self, history, state: SessionState):
+    def _generate_bot_answer(self, history, state: SessionState | None):
         """Step 2: answer the last user message. As a plain function writing to the Chatbot, it makes
         Gradio show its native loading animation while it runs."""
+        if state is None:  # first turn of this session: create a per-session thread_id
+            state = new_session_state()
         if not history or history[-1]["role"] != "user":
             return history, None, state  # nothing pending (e.g. empty input in step 1)
         question = self._message_text(history[-1]["content"])

@@ -1,14 +1,14 @@
 from typing import Literal, Optional
 from pydantic import BaseModel
 
-from chatbot.dialog.DialogState import SubQuestion
+from chatbot.dialog.dialog_state import SubQuestion
 
 
 class ModelResponse(BaseModel):
     type: Literal["query", "clarification", "chitchat"]
     sub_questions: Optional[list[SubQuestion]] = None  # if type query
     clarification_question: Optional[str] = None  # if type clarification
-    response: Optional[str] = None  # if type direct
+    response: Optional[str] = None  # if type chitchat
 
     def __str__(self):
         return f"""

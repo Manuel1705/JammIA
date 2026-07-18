@@ -9,7 +9,6 @@ dependencies = [
     "langchain-neo4j>=0.10.0",
     "langchain-ollama>=1.1.0",
     "langgraph>=1.2.7",
-    "langgraph-checkpoint-sqlite>=3.1.0",
     "mlx-lm>=0.21.0",
     "numpy>=2.5.0",
     "pydantic>=2.13.4",

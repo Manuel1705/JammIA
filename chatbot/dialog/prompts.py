@@ -1,4 +1,4 @@
-from chatbot.dialog.DialogState import DialogState
+from chatbot.dialog.dialog_state import DialogState
 
 
 def build_prompt_classifier_prompt(question: str, state: DialogState) -> str:

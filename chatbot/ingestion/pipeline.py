@@ -1,9 +1,9 @@
 from collections.abc import Callable
 
 from chatbot import config
-from chatbot.ingestion.Extractor import Extractor
-from chatbot.ingestion.Neo4jLoader import Neo4jLoader
-from chatbot.ingestion.SparqlExecutor import SparqlExecutor
+from chatbot.ingestion.extractor import Extractor
+from chatbot.ingestion.neo4j_loader import Neo4jLoader
+from chatbot.ingestion.sparql_executor import SparqlExecutor
 
 
 def populate_database() -> None:

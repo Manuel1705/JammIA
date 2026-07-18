@@ -23,6 +23,7 @@ class Extractor:
 
     def _append_to_wikipedia_cache(self, cache: dict[str, str]) -> None:
         self._wikipedia_cache.update(cache)
+        config.CACHE_WIKIPEDIA.parent.mkdir(parents=True, exist_ok=True)
         with open(config.CACHE_WIKIPEDIA, "w", encoding="utf-8") as f:
             json.dump(self._wikipedia_cache, f, ensure_ascii=False, indent=2)
 

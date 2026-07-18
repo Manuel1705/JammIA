@@ -59,7 +59,11 @@ class Neo4jLoader:
         """, museum)
 
     def insert_work(self, work: dict) -> None:
-        """NOTE: Run only after inserting artists and museums """
+        """NOTE: Run only after inserting artists and museums.
+
+        OPTIONAL MATCH + FOREACH invece di MATCH: se artista o museo mancano, un MATCH interno
+        farebbe terminare la query a metà in silenzio (relazioni successive mai create). Così
+        ogni relazione viene creata solo se il nodo esiste, senza troncare il resto."""
         self._run("""
             MERGE (o:Opera {wikidataId: $wikidata_id})
             ON CREATE SET
@@ -73,10 +77,14 @@ class Neo4jLoader:
                 o.tipo        = $type
 
             WITH o
-            MATCH (a:Artista {wikidataId: $artist_id})
-            MERGE (o)-[:DIPINTA_DA]->(a)
+            OPTIONAL MATCH (a:Artista {wikidataId: $artist_id})
+            FOREACH (_ IN CASE WHEN a IS NOT NULL THEN [1] ELSE [] END |
+                MERGE (o)-[:DIPINTA_DA]->(a)
+            )
 
             WITH o
-            MATCH (m:Museo {wikidataId: $museum_id})
-            MERGE (o)-[:ESPOSTA_IN]->(m)
+            OPTIONAL MATCH (m:Museo {wikidataId: $museum_id})
+            FOREACH (_ IN CASE WHEN m IS NOT NULL THEN [1] ELSE [] END |
+                MERGE (o)-[:ESPOSTA_IN]->(m)
+            )
         """, work)

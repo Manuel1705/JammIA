@@ -30,7 +30,7 @@ CACHE_WIKIPEDIA = BASE_DIR / "cache/wikipedia_cache.json"
 
 # ── Wikidata (SPARQL) ─────────────────────────────────────────
 SPARQL_ENDPOINT = "https://query.wikidata.org/sparql"
-USER_AGENT = "CaravaggioBot/1.0 (progetto universitario NLP; tuaemail@esempio.com)"
+USER_AGENT = "CaravaggioBot/1.0 (progetto universitario NLP; manuelmignogna5@gmail.com)"
 
 # ── Wikipedia (text descriptions) ─────────────────────────────
 WIKI_API = "https://it.wikipedia.org/w/api.php"
