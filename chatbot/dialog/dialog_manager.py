@@ -88,6 +88,8 @@ class DialogManager:
             return NodeType.USER_INTENT_CLARIFICATION
         if state.response:
             return NodeType.HISTORY_UPDATE
+        if state.sub_questions:
+            return NodeType.RESPONSE_GENERATION
         return NodeType.RESPONSE_GENERATION
 
     @staticmethod

@@ -75,6 +75,7 @@ class ChatController:
                 self._generate_bot_answer,
                 inputs=[chatbot, state],
                 outputs=[chatbot, audio_out, state],
+                show_progress_on=chatbot,
             )
             # text: show the message (step 1), then generate the answer (step 2)
             text_in.submit(
@@ -85,6 +86,7 @@ class ChatController:
                 self._generate_bot_answer,
                 inputs=[chatbot, state],
                 outputs=[chatbot, audio_out, state],
+                show_progress_on=chatbot,
             )
             reset_btn.click(
                 self.new_conversation,
