@@ -2,7 +2,6 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Literal, TypedDict
 
 from langchain_core.runnables import RunnableConfig
-from langchain_ollama import ChatOllama
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 from langgraph.graph import END, START, StateGraph
@@ -27,7 +26,7 @@ class TurnResult(TypedDict):
 class DialogManager:
     def __init__(self):
         self._rag = RagChain()
-        self._chat_model = ChatOllama(model=config.LLM_MODEL, temperature=0)
+        self._chat_model = config.make_llm(config.LLM_TEMPERATURE)
         self._checkpointer = MemorySaver(serde=JsonPlusSerializer(allowed_msgpack_modules=[Turn, SubQuestion]))
         self._graph = self._build_state_graph()
 
@@ -92,6 +91,18 @@ class DialogManager:
             return NodeType.RESPONSE_GENERATION
         return NodeType.RESPONSE_GENERATION
 
+    def _invoke_llm_text(self, llm, prompt: str) -> str:
+        """Invoca l'LLM e restituisce SEMPRE testo semplice: alcuni provider (es. Gemini)
+        restituiscono il content come lista di blocchi invece che come stringa."""
+        content = llm.invoke(prompt).content
+        if isinstance(content, str):
+            return content
+        return "".join(
+            p if isinstance(p, str) else p.get("text", "")
+            for p in content
+            if isinstance(p, (str, dict))
+        )
+
     @staticmethod
     def _extract_json(raw: str) -> str:
         """Il modello a volte avvolge il JSON in fence markdown o antepone testo (es. "json {...}").
@@ -104,7 +115,7 @@ class DialogManager:
     def _classify_question(self, question: str, state: DialogState) -> ModelResponse:
         prompt = build_prompt_classifier_prompt(question, state)
         try:
-            raw = self._chat_model.invoke(prompt).content
+            raw = self._invoke_llm_text(self._chat_model, prompt)
             response = ModelResponse.model_validate_json(self._extract_json(raw))
         except Exception as e:
             print(f"[DialogManager] prompt classification failed: {e}")
@@ -185,7 +196,7 @@ class DialogManager:
             for sub_q, rows in retrieved
         )
         prompt = COMBINE_PROMPTS_TEMPLATE.format(results=blocks)
-        answer = self._rag.llm.invoke(prompt).content.strip()
+        answer = self._invoke_llm_text(self._rag.llm, prompt).strip()
         print(f"\n🧠 [RESPONSE] {answer}")
         return answer or "An Error occurred during sub answers combination"
 

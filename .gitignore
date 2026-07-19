@@ -12,6 +12,9 @@ __pycache__/
 .claude/
 .gradio/
 
+# Segreti (API key ecc.)
+.env
+
 # File generati a runtime
 dialog_state.sqlite*
 risposta.mp3

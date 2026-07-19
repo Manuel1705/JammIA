@@ -1,6 +1,5 @@
 from langchain_neo4j import Neo4jGraph
 from langchain_neo4j.chains.graph_qa.cypher import GraphCypherQAChain
-from langchain_ollama import ChatOllama
 
 from chatbot import config
 from chatbot.rag.prompts import CYPHER_PROMPT
@@ -21,7 +20,7 @@ class RagChain:
     """
 
     def __init__(self):
-        self.llm = ChatOllama(model=config.LLM_MODEL, temperature=config.LLM_TEMPERATURE)
+        self.llm = config.make_llm(config.LLM_TEMPERATURE)
         self.chain = GraphCypherQAChain.from_llm(
             llm=self.llm,
             graph=Neo4jGraph(config.NEO4J_URI, config.NEO4J_USER, config.NEO4J_PASSWORD),
