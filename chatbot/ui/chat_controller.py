@@ -44,7 +44,7 @@ class ChatController:
             state = gr.State(None)
 
             gr.Markdown(
-                "# 🌋 JammIA — 'a guida a Caravaggio e Caracciolo\n"
+                "# 🎨JammIA — 'a guida a Caravaggio e Caracciolo\n"
                 "Uè! Fai la tua domanda **a voce** (microfono + Invia) oppure **scrivendola** nel campo di testo. "
                 "Ti racconto le opere dei due artisti e i musei di Napoli che le espongono. Jamme jà! 🎨"
             )
