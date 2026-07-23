@@ -5,7 +5,7 @@ from chatbot.dialog.dialog_manager import DialogManager
 from chatbot.speech.text_to_speech import TextToSpeech
 from chatbot.speech.speech_to_text import SpeechToText
 
-# saluto iniziale mostrato in chat (all'avvio e dopo "N'ata vota")
+# saluto iniziale mostrato in chat (all'avvio e dopo "Nuova conversazione")
 _GREETING = {
     "role": "assistant",
     "content": (
@@ -34,7 +34,7 @@ class ChatController:
         self.create_ui().launch(theme=theme, **kwargs)
 
     def create_ui(self):
-        with gr.Blocks(title="JammIA — 'a guida a Caravaggio e Caracciolo") as demo:
+        with gr.Blocks(title="JammIA — guida a Caravaggio e Caracciolo") as demo:
             # gr.State must be created INSIDE the Blocks context, otherwise it isn't registered with
             # this demo and Gradio raises KeyError when reading it during an event (state[block._id]).
             # Initial value None (NOT new_session_state()): the initial value is evaluated once at UI
@@ -44,12 +44,12 @@ class ChatController:
             state = gr.State(None)
 
             gr.Markdown(
-                "# 🎨JammIA — 'a guida a Caravaggio e Caracciolo\n"
-                "Uè! Fai la tua domanda **a voce** (microfono + Invia) oppure **scrivendola** nel campo di testo. "
-                "Ti racconto le opere dei due artisti e i musei di Napoli che le espongono. Jamme jà! 🎨"
+                "# 🎨 JammIA — guida a Caravaggio e Caracciolo\n"
+                "Fai la tua domanda **a voce** (microfono + Invia) oppure **scrivendola** nel campo di testo. "
+                "Ti racconto le opere dei due artisti e i musei di Napoli che le espongono."
             )
 
-            chatbot = gr.Chatbot(height=420, label="'A chiacchierata", value=[_GREETING])
+            chatbot = gr.Chatbot(height=420, label="Conversazione", value=[_GREETING])
 
             text_in = gr.Textbox(
                 label="Oppure scrivi la domanda",
@@ -60,10 +60,10 @@ class ChatController:
             audio_in = gr.Audio(sources=["microphone"], type="numpy", label="Domanda a voce")
 
             with gr.Row():
-                send_btn = gr.Button("🎤 Manna 'a domanda", variant="primary")
-                reset_btn = gr.Button("🔁 N'ata vota (nuova conversazione)")
+                send_btn = gr.Button("🎤 Invia domanda", variant="primary")
+                reset_btn = gr.Button("🔁 Nuova conversazione")
 
-            audio_out = gr.Audio(label="'A risposta di JammIA", autoplay=True)
+            audio_out = gr.Audio(label="Risposta di JammIA", autoplay=True)
 
             # voice: transcribe + show the message (step 1), then generate the answer with the native
             # loading animation (step 2)

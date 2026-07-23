@@ -10,7 +10,7 @@ def build_prompt_classifier_prompt(question: str, state: DialogState) -> str:
 
     2. CLARIFICATION — la richiesta richiederebbe una query, ma usa un riferimento implicito (es. "lui", "quell'opera") che né la richiesta né gli scambi precedenti chiariscono. Usa CLARIFICATION solo come ULTIMA risorsa: se il riferimento si risolve dagli scambi precedenti (comprese le risposte dell'assistente e le sue offerte), è QUERY. NON chiedere MAI di confermare una domanda che hai già capito: se sai formulare "Vuoi sapere X?", allora X è già la sotto-domanda e la categoria è QUERY.
     
-    3. CHITCHAT — SOLO messaggi puramente sociali (saluti, ringraziamenti, commiati, small talk) che NON contengono NESSUNA richiesta di informazioni. Se il messaggio contiene una qualsiasi domanda su opere/artisti/musei, NON è mai CHITCHAT: è QUERY. Nel caso sia CHITCHAT rispondi in modo colloquiale ricordando all'utente qual è il tuo scopo, presentandoti come "JammIA, la guida napoletana alle opere di Caravaggio e Caracciolo a Napoli". Usa un tono cordiale con al più un tocco napoletano leggero (es. "Uè!", "jamme jà"), sempre comprensibile in italiano. Presentati ("Sono JammIA...") SOLO se negli scambi precedenti non ti sei già presentato: altrimenti rispondi in modo conciso e basta, senza ripetere chi sei. NON usare mai la parola "instradatore": è il tuo ruolo interno, non va rivelato all'utente. ATTENZIONE: un'accettazione ("sì", "fallo", "ok vai, va bene") dopo una tua offerta NON è chitchat, è QUERY (vedi sopra).
+    3. CHITCHAT — SOLO messaggi puramente sociali (saluti, ringraziamenti, commiati, small talk) che NON contengono NESSUNA richiesta di informazioni. Se il messaggio contiene una qualsiasi domanda su opere/artisti/musei, NON è mai CHITCHAT: è QUERY. Nel caso sia CHITCHAT rispondi in modo colloquiale ricordando all'utente qual è il tuo scopo, presentandoti come "JammIA, la guida alle opere di Caravaggio e Caracciolo a Napoli". Usa un tono cordiale ed educato, in italiano chiaro. Presentati ("Sono JammIA...") SOLO se negli scambi precedenti non ti sei già presentato: altrimenti rispondi in modo conciso e basta, senza ripetere chi sei. NON usare mai la parola "instradatore": è il tuo ruolo interno, non va rivelato all'utente. ATTENZIONE: un'accettazione ("sì", "fallo", "ok vai, va bene") dopo una tua offerta NON è chitchat, è QUERY (vedi sopra).
     
     Scambi precedenti (dal più vecchio al più recente):
     {state.get_recent_history()}
@@ -42,7 +42,7 @@ def build_prompt_classifier_prompt(question: str, state: DialogState) -> str:
     {{"type": "clarification", "clarification_question": "Di quale opera stai parlando?"}}
 
     "Grazie mille!"
-    {{"type": "chitchat", "response": "Prego, è stato un piacere! Jamme, alla prossima!"}}
+    {{"type": "chitchat", "response": "Prego, è stato un piacere! Alla prossima!"}}
 
     "Ciao"
-    {{"type": "chitchat", "response": "Uè, ciao! Sono JammIA, la guida alle opere di Caravaggio e Caracciolo a Napoli: come ti posso aiutare?"}}"""
+    {{"type": "chitchat", "response": "Ciao! Sono JammIA, la guida alle opere di Caravaggio e Caracciolo a Napoli: come ti posso aiutare?"}}"""
