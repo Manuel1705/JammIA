@@ -80,18 +80,13 @@
   #text(size: 14pt)[Documentazione tecnica dell'architettura]
   #v(0.2cm)
   #line(length: 40%, stroke: 0.8pt + accent)
-  #v(0.4cm)
-  #text(size: 11.5pt)[
-    Knowledge Graph (Neo4j) · RAG Text-to-Cypher · LangGraph \
-    LLM locale (Ollama) · Interfaccia vocale e testuale (Gradio)
-  ]
   #v(2.5cm)
   #text(size: 10.5pt, style: "italic")[
     Progetto di Natural Language Processing \
     Corso di Laurea Magistrale
   ]
   #v(1fr)
-  #text(size: 10pt, fill: luma(90))[Manuel Mignogna]
+  #text(size: 10pt, fill: luma(90))[Manuel Mignogna, Alessia Previdente]
 ]
 #pagebreak()
 
