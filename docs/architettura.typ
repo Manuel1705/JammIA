@@ -489,41 +489,10 @@ Alle sotto-domande *fuori ambito* è riservata una nota fissa che ricorda i conf
 
 == Interfaccia Gradio
 
-`ChatController` costruisce l'interfaccia, brandizzata JammIA, con tema Gradio sui toni dell'azzurro Napoli (passato a `launch()`, come richiesto da Gradio 6), e ne espone gli handler. Ogni turno è diviso in *due eventi concatenati* (`step 1 .then(step 2)`): il primo aggiunge subito il messaggio dell'utente alla chat (feedback immediato), il secondo calcola la risposta. L'animazione di caricamento è confinata al solo componente chat (`show_progress_on`): senza questo accorgimento lo spinner coprirebbe anche il player audio, interrompendo l'ascolto della risposta precedente mentre se ne genera una nuova. Sono supportati due ingressi, testo e microfono, che convergono sullo stesso passo di generazione.
+`ChatController` costruisce l'interfaccia, brandizzata JammIA, con tema Gradio sui toni dell'azzurro Napoli (passato a `launch()`, come richiesto da Gradio 6), e ne espone gli handler. Ogni turno è diviso in *due eventi concatenati* (`step 1 .then(step 2)`): il primo aggiunge subito il messaggio dell'utente alla chat (feedback immediato), il secondo calcola la risposta. Sono supportati due ingressi, testo e microfono, che convergono sullo stesso passo di generazione.
 
 Lo stato di sessione (`SessionState`, in `gr.State`) conserva due informazioni: il `thread_id` della conversazione (creato pigramente al primo turno, v. sopra) e un flag `awaiting_clarification`, che indica se il messaggio successivo va instradato come *risposta a un chiarimento* anziché come nuova domanda. Il pulsante di reset rigenera il `thread_id`, ripulendo di fatto la storia.
 
 == Voce: Whisper e gTTS
 
 Il riconoscimento vocale (`SpeechToText`) usa *Whisper large-v3* tramite la pipeline di `transformers`, forzando la lingua italiana. L'audio `(sample_rate, ndarray)` prodotto dal microfono di Gradio arriva come interi (tipicamente int16, eventualmente stereo) e viene *normalizzato* nel formato atteso da Whisper (mono, float32, valori in $[-1, 1]$); senza questa normalizzazione la trascrizione degrada sensibilmente. La sintesi vocale (`TextToSpeech`) usa *gTTS* e scrive ogni risposta in un *file temporaneo distinto* (niente file condiviso: eviterebbe race condition tra sessioni concorrenti e audio obsoleto in cache al browser). La sintesi è *tollerante ai guasti*: se il servizio TTS fallisce, il turno mostra comunque la risposta testuale, semplicemente senza audio.
-
-// ============================================================
-= Sintesi delle scelte architetturali
-// ============================================================
-
-#table(
-  columns: (auto, 1fr),
-  stroke: 0.5pt + luma(210),
-  inset: 8pt,
-  fill: (_, y) => if y == 0 { softbg },
-  [*Scelta*], [*Motivazione*],
-  [Knowledge graph invece di RAG vettoriale], [Il dominio è fattuale e relazionale (chi ha dipinto cosa, esposta dove): un grafo risponde con precisione a conteggi e relazioni, dove l'embedding sarebbe approssimativo.],
-  [LLM come traduttore/sintetizzatore], [Ancora le risposte a dati verificabili nel grafo, riducendo le allucinazioni; il modello non è la fonte di verità.],
-  [LLM locale via Ollama], [Nessun costo per token né chiave API; esecuzione interamente in locale, adatta a un progetto didattico.],
-  [Grafo di stato LangGraph], [Rende esplicito e manutenibile il flusso decisionale del turno, con chiarimenti human-in-the-loop e persistenza per conversazione.],
-  [Estrazione JSON tollerante + validazione Pydantic], [Contratto tipizzato sull'output del classificatore, robusto anche con backend che non supportano la decodifica vincolata.],
-  [Prompt separati per ruolo (routing+chitchat / Cypher / sintesi)], [Ogni prompt ha una responsabilità circoscritta: le regole di stile non inquinano la generazione delle query e ogni ruolo si può ottimizzare in isolamento.],
-  [Scomposizione + risoluzione riferimenti], [Permette di gestire domande composte e conversazionali, isolando sotto-domande auto-contenute per il retrieval.],
-  [Retrieval parallelo + sintesi unica], [Minimizza latenza e numero di chiamate LLM, centralizzando lo stile in un solo prompt.],
-  [Cache SPARQL e Wikipedia], [Rende la ricostruzione del database rapida e rispettosa dei rate limit delle fonti.],
-  [Degradazione elegante (voce, retry, fallback)], [Il sistema resta utilizzabile anche quando un componente esterno o l'LLM falliscono transitoriamente.],
-)
-
-#v(1cm)
-#align(center)[
-  #line(length: 30%, stroke: 0.6pt + accent)
-  #v(0.3cm)
-  #text(size: 9pt, style: "italic", fill: luma(100))[
-    Documento generato come descrizione tecnica dell'architettura del progetto.
-  ]
-]
