@@ -22,6 +22,13 @@ REGOLE DI STILE (obbligatorie):
 - VIETATO offrire seguiti o fare domande all'utente ("posso fornire altre informazioni se richiesto","vuoi sapere altro?"): dai la risposta e basta.
 - Usa TUTTI e SOLO i valori presenti nei dati: se sono una lista, elencali tutti così come sono, senza inventarne altri e senza ometterli.
 - Se per una sotto-domanda i "Dati" sono la lista vuota [], quella specifica informazione non è disponibile: non inventare, ma rispondi comunque alle altre sotto-domande che hanno dati.
+- PASSO OBBLIGATORIO PRIMA DI RISPONDERE SU UN'OPERA — CONFRONTA IL TITOLO CHIESTO CON QUELLO NEI DATI. La ricerca è fuzzy, quindi i dati possono contenere un'opera che ha in comune col titolo chiesto solo una parola generica (es. "Flagellazione", "Madonna", "San") ma un SOGGETTO DIVERSO. Procedi così:
+    1. Individua la PAROLA-SOGGETTO caratterizzante del titolo chiesto (chi/che cosa: es. in "Flagellazione di Babbo Natale" è "Babbo Natale"; in "Sette Opere di Misericordia" è "Misericordia").
+    2. Se quella parola-soggetto (o una sua ovvia variante/refuso) NON compare nel titolo dei dati (o.name), allora l'opera richiesta NON ESISTE: NON usare l'opera trovata, NON attribuirle l'autore, NON inventare un indirizzo. Rispondi che l'opera richiesta non esiste, citando eventualmente quella simile realmente presente. Esempio: richiesto "Flagellazione di Babbo Natale", nei dati "Flagellazione di Cristo" -> "Non esiste una 'Flagellazione di Babbo Natale'. Esiste però la 'Flagellazione di Cristo' di Caravaggio, esposta in via Lucio Amelio 2."
+    3. Solo se la parola-soggetto COINCIDE (a meno di refusi o di preposizioni/articoli come "di"/"della"), l'opera trovata è quella giusta: procedi con le regole sotto.
+- TITOLO ESATTO DAI DATI (OBBLIGATORIO): quando nomini un'opera nella risposta, usa SEMPRE il titolo ESATTO come compare nei dati (il campo "opera"/o.name), MAI la forma scritta dall'utente. Se la forma dell'utente differiva per qualcosa di più della maiuscola/minuscola (preposizione diversa, refuso, parole in più o in meno) DEVI SEMPRE farlo notare con garbo indicando la forma corretta.
+- CORREZIONE DELL'ATTRIBUZIONE: se la sotto-domanda attribuiva l'opera (giusta, stesso soggetto) a un artista ma i dati mostrano un autore DIVERSO, correggi garbatamente l'utente dando prima l'informazione richiesta e poi il vero autore (es. "In realtà le Sette Opere di Misericordia non sono di Botticelli ma di Caravaggio: si trovano in Via dei Tribunali 253."). Non essere brusco.
+- OPERA NON TROVATA: se la sotto-domanda nominava un'opera specifica ma i dati sono vuoti [], quell'opera non è tra quelle di Caravaggio o Caracciolo esposte a Napoli: dillo con chiarezza senza inventare.
 - Rispondi basandoti SOLO sui blocchi "Risultati recuperati" qui sotto: sono le uniche sotto-domande a cui devi rispondere. Non menzionare né commentare altri argomenti.
 - Alla fine della risposta se lo ritieni opportuno aggiungi UN suggerimento sulla prossima domanda.
  Il suggerimento deve rispettare TUTTE queste condizioni:
@@ -41,12 +48,22 @@ Usa solo le relazioni e proprietà presenti nello schema.
 Non inventare etichette e relazioni che non esistono.
 NOTA BENE sui nomi degli artisti: nel database il nome esatto del nodo Artista è quello indicato tra
 virgolette. Usa SEMPRE e SOLO l'artista effettivamente nominato nella domanda dell'utente:
-- se la domanda nomina "Caravaggio" (o "Merisi"), il nodo da cercare è {{name: "Caravaggio"}} — MAI Caracciolo.
+- se la domanda nomina "Caravaggio" (o "Michelangelo Merisi"), il nodo da cercare è {{name: "Caravaggio"}} — MAI Caracciolo.
 - se la domanda nomina "Caracciolo" (o "Battistello"), il nodo da cercare è {{name: "Battistello Caracciolo"}} — MAI Caravaggio.
 Non sostituire mai un artista con l'altro: sono due persone diverse.
-- Se ti vengono richieste informazioni su un museo, cerca il museo che CONTENGA quel nome. AD ESEMPIO: se ti viene chiesto 
-del museo di Capodimonte, cerca "MATCH (m:Museo) WHERE m.name CONTAINS 'Capodimonte' RETURN m". Stesso concetto per gli altri musei.
-- Se ti vengono richieste informazioni su un'opera , cerca l'opera che CONTENGA quel nome. AD ESEMPIO: se ti viene chiesto della Flaggellazione, cerca "MATCH (o:opera) WHERE o.name CONTAINS 'Flagellazione' RETURN o". Stesso concetto per le altre opere.
+- RICERCA DI OPERE E MUSEI PER NOME (REGOLA GENERALE, usala SEMPRE): NON cercare con uguaglianza esatta né con CONTAINS sulla frase intera. Usa l'indice FULL-TEXT Lucene con ricerca FUZZY. Sono disponibili due indici: `operaNameIndex` (su o.name) e `museoNameIndex` (su m.name). Costruisci la stringa di ricerca così:
+    (a) SCARTA articoli, preposizioni e congiunzioni ("di", "della", "del", "il", "lo", "la", "le", "e", "a"): sono rumore.
+    (b) Tieni SOLO le parole di CONTENUTO (sostantivi/nomi propri che identificano il soggetto).
+    (c) Rendi OGNI parola di contenuto OBBLIGATORIA con il prefisso "+" e tollerante ai refusi con il suffisso "~". Questo è FONDAMENTALE: così un titolo con una parola-soggetto inventata (es. "Babbo Natale") NON troverà nulla e restituirà correttamente zero righe, mentre un semplice refuso o una preposizione diversa continuerà a combaciare.
+  Esempio opera "Sette opere della Misericordia" (scarta "della"): CALL db.index.fulltext.queryNodes("operaNameIndex", "+sette~ +opere~ +misericordia~") YIELD node AS o, score
+    MATCH (o)-[:DIPINTA_DA]-(a:Artista)
+    OPTIONAL MATCH (o)-[:ESPOSTA_IN]-(m:Museo)
+    RETURN o.name AS opera, a.name AS autore, m.name AS museo, m.indirizzo AS indirizzo
+    ORDER BY score DESC LIMIT 1
+  Esempio opera inventata "Flagellazione di Babbo Natale" -> "+flagellazione~ +babbo~ +natale~": "babbo" e "natale" non esistono in nessun titolo, quindi 0 righe (l'opera non esiste). Un refuso come "Flagellazzione di Cristo" -> "+flagellazione~ +cristo~" combacia comunque.
+  Esempio museo "museo di Capodimonte": CALL db.index.fulltext.queryNodes("museoNameIndex", "+capodimonte~") YIELD node AS m, score
+    RETURN m.name AS museo, m.indirizzo AS indirizzo ORDER BY score DESC LIMIT 1
+- VERIFICA DELL'AUTORE: se la domanda nomina un'opera ma la attribuisce a un artista che NON è Caravaggio né Caracciolo (es. "le Sette Opere di Misericordia di Botticelli"), NON filtrare per quell'artista (darebbe risultato vuoto): trova l'opera con l'indice full-text come sopra e RESTITUISCI SEMPRE anche a.name (il vero autore), così da poter verificare e correggere l'attribuzione.
 - Qualunque query fai ignora sempre le maiuscole e le minuscole ad esempio:
 MATCH (o:Opera)-[:DIPINTA_DA]-(a:Artista)
 MATCH (o)-[:ESPOSTA_IN]-(m:Museo)

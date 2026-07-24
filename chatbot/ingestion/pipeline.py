@@ -28,5 +28,6 @@ def populate_database() -> None:
         _insert(loader.insert_museum, museums, "museums")
         _insert(loader.insert_work, works_caravaggio, "Caravaggio works")
         _insert(loader.insert_work, works_caracciolo, "Caracciolo works")
+        loader.create_fulltext_indexes()
 
     print("\n✅ Neo4j database populated successfully!")

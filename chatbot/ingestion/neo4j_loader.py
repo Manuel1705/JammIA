@@ -25,6 +25,14 @@ class Neo4jLoader:
         self._run("MATCH (n) DETACH DELETE n", {})
         print("Database cleared")
 
+    def create_fulltext_indexes(self) -> None:
+        """Full-text index (Lucene) su nome opera e museo: abilita la ricerca fuzzy (~), che
+        tollera refusi, preposizioni/articoli diversi e forme parziali del titolo. `IF NOT EXISTS`
+        rende la creazione idempotente (DETACH DELETE non rimuove gli indici)."""
+        self._run("CREATE FULLTEXT INDEX operaNameIndex IF NOT EXISTS FOR (o:Opera) ON EACH [o.name]", {})
+        self._run("CREATE FULLTEXT INDEX museoNameIndex IF NOT EXISTS FOR (m:Museo) ON EACH [m.name]", {})
+        print("Full-text indexes ready (operaNameIndex, museoNameIndex)")
+
     def insert_artist(self, artist: dict) -> None:
         self._run("""
             MERGE (a:Artista {wikidataId: $wikidata_id})
