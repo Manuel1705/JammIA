@@ -5,7 +5,7 @@ from chatbot.dialog.dialog_manager import DialogManager
 from chatbot.speech.text_to_speech import TextToSpeech
 from chatbot.speech.speech_to_text import SpeechToText
 
-# saluto iniziale mostrato in chat (all'avvio e dopo "Nuova conversazione")
+# initial greeting shown in chat (on startup and after "Nuova conversazione")
 _GREETING = {
     "role": "assistant",
     "content": (

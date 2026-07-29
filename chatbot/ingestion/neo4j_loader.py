@@ -26,9 +26,9 @@ class Neo4jLoader:
         print("Database cleared")
 
     def create_fulltext_indexes(self) -> None:
-        """Full-text index (Lucene) su nome opera e museo: abilita la ricerca fuzzy (~), che
-        tollera refusi, preposizioni/articoli diversi e forme parziali del titolo. `IF NOT EXISTS`
-        rende la creazione idempotente (DETACH DELETE non rimuove gli indici)."""
+        """Full-text index (Lucene) on artwork and museum names: enables fuzzy search (~), which
+        tolerates typos, different prepositions/articles and partial title forms. `IF NOT EXISTS`
+        makes creation idempotent (DETACH DELETE does not remove the indexes)."""
         self._run("CREATE FULLTEXT INDEX operaNameIndex IF NOT EXISTS FOR (o:Opera) ON EACH [o.name]", {})
         self._run("CREATE FULLTEXT INDEX museoNameIndex IF NOT EXISTS FOR (m:Museo) ON EACH [m.name]", {})
         print("Full-text indexes ready (operaNameIndex, museoNameIndex)")
@@ -69,9 +69,9 @@ class Neo4jLoader:
     def insert_work(self, work: dict) -> None:
         """NOTE: Run only after inserting artists and museums.
 
-        OPTIONAL MATCH + FOREACH invece di MATCH: se artista o museo mancano, un MATCH interno
-        farebbe terminare la query a metà in silenzio (relazioni successive mai create). Così
-        ogni relazione viene creata solo se il nodo esiste, senza troncare il resto."""
+        OPTIONAL MATCH + FOREACH instead of MATCH: if the artist or museum is missing, an inner MATCH
+        would silently terminate the query halfway (later relationships never created). This way each
+        relationship is created only if the node exists, without truncating the rest."""
         self._run("""
             MERGE (o:Opera {wikidataId: $wikidata_id})
             ON CREATE SET

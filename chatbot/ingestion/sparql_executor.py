@@ -48,9 +48,9 @@ class SparqlExecutor:
         return None
 
     def _execute_query(self, sparql_query: str, max_retry: int = 5) -> list:
-        """Fail LOUDLY: se una query fallisce, l'eccezione risale invece di restituire [] in
-        silenzio — altrimenti il risultato vuoto finirebbe in cache mascherando per sempre
-        l'errore. Il retry vale solo per il rate limit (HTTP 429)."""
+        """Fail LOUDLY: if a query fails, the exception propagates instead of silently returning [] —
+        otherwise the empty result would be cached, masking the error forever. Retry applies only to
+        the rate limit (HTTP 429)."""
         sparql = self._sparql
         sparql.addCustomHttpHeader("User-Agent", config.USER_AGENT)
         sparql.setTimeout(60)
@@ -63,7 +63,7 @@ class SparqlExecutor:
                 result = cast(dict, sparql.query().convert())
                 return result["results"]["bindings"]
             except Exception as e:
-                if "429" not in str(e):  # errore non transiente: inutile ritentare
+                if "429" not in str(e):  # non-transient error: no point retrying
                     raise RuntimeError(f"Query SPARQL fallita: {e}") from e
                 last_error = e
                 print("\n ⚠️ Rate limit! Waiting 5 seconds...")

@@ -18,7 +18,7 @@ from chatbot.rag.prompts import COMBINE_PROMPTS_TEMPLATE
 
 
 class TurnResult(TypedDict):
-    """Esito di un turno restituito alla UI."""
+    """Outcome of a turn returned to the UI."""
     type: Literal["answer", "clarification"]
     text: str
 
@@ -92,8 +92,8 @@ class DialogManager:
         return NodeType.RESPONSE_GENERATION
 
     def _invoke_llm_text(self, llm, prompt: str) -> str:
-        """Invoca l'LLM e restituisce SEMPRE testo semplice: alcuni provider (es. Gemini)
-        restituiscono il content come lista di blocchi invece che come stringa."""
+        """Invoke the LLM and ALWAYS return plain text: some providers (e.g. Gemini)
+        return the content as a list of blocks instead of a string."""
         content = llm.invoke(prompt).content
         if isinstance(content, str):
             return content
@@ -105,8 +105,8 @@ class DialogManager:
 
     @staticmethod
     def _extract_json(raw: str) -> str:
-        """Il modello a volte avvolge il JSON in fence markdown o antepone testo (es. "json {...}").
-        Estrae la porzione tra la prima '{' e l'ultima '}', tollerando questi extra."""
+        """The model sometimes wraps the JSON in a markdown fence or prepends text (e.g. "json {...}").
+        Extract the portion between the first '{' and the last '}', tolerating these extras."""
         start, end = raw.find("{"), raw.rfind("}")
         if start == -1 or end == -1:
             raise ValueError(f"nessun oggetto JSON nella risposta del modello: {raw!r}")
@@ -179,7 +179,7 @@ class DialogManager:
         return {"response": " ".join(answer_parts).strip()}
 
     def _query_graph_with_retries(self, query: str, max_retry: int = 3) -> list:
-        """Retries only on ERRORS (Cypher non valido, connessione, ecc.): un risultato vuoto su query riuscita è una risposta legittima ("non c'è") e non va ritentato."""
+        """Retries only on ERRORS (invalid Cypher, connection, etc.): an empty result on a successful query is a legitimate answer ("nothing there") and must not be retried."""
         for attempt in range(max_retry):
             try:
                 result_rows = self._rag.chain.invoke({"query": query})["result"]
@@ -219,6 +219,6 @@ class DialogManager:
         """Takes the graph response and maps it to a TurnResult to be displayed in the UI"""
         if "__interrupt__" in result:
             return TurnResult(type="clarification", text=result["__interrupt__"][0].value)
-        # .get + fallback: se il grafo termina senza risposta (caso anomalo) non deve esplodere la UI
+        # .get + fallback: if the graph ends without a response (anomalous case) the UI must not crash
         text = result.get("response") or "Scusa, si è verificato un problema. Puoi riprovare?"
         return TurnResult(type="answer", text=text)
